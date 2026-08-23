@@ -33,7 +33,7 @@ class ProjectsResource extends Resource
         $projects = rescue(fn () => app(ProjectsService::class)->loadProjects());
 
         if (! $projects) {
-            return Response::error('Failed to load projects.');
+            return Response::error('Failed to load projects.')->asAssistant();
         }
 
         return $this->json($projects->map(fn (ProjectData $data): array => [

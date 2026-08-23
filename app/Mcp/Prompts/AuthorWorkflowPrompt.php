@@ -53,7 +53,8 @@ class AuthorWorkflowPrompt extends Prompt
            runner and services the project actually has, rather than the ones its ecosystem usually
            has.
         5. Write the file to {$path}/{$directory}/<name>.{$this->extension()}, using your own file
-           tools — no tool on this server writes workflow files.
+           tools — no tool on this server authors a workflow file. `add-workspace-example-workflows`
+           only copies a fixed starter set into a workspace that has none.
         6. Call `validate-workflow` with the workspace path and the workflow name. Fix whatever it
            reports and validate again until it passes.
         7. Report the file you wrote, what each step does, and the `require_status` / `ending_status`

@@ -34,7 +34,7 @@ class ProjectResource extends Resource implements HasUriTemplate
         $project = rescue(fn () => app(ProjectsService::class)->loadProjects()->firstWhere('uuid', $request->get('uuid')));
 
         if (! $project) {
-            return Response::error('Failed to load project.');
+            return Response::error('Failed to load project.')->asAssistant();
         }
 
         return $this->json($project->toMcpResource());

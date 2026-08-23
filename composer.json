@@ -15,6 +15,7 @@
         "laravel/mcp": "^0.9.4",
         "laravel/tinker": "^3.0",
         "nativephp/desktop": "^2.2",
+        "phiki/phiki": "^2.2",
         "sensiolabs/ansi-to-html": "^2.0",
         "spatie/laravel-data": "^4.23",
         "symfony/yaml": "^7.2|^8.0",
@@ -94,6 +95,7 @@
         ],
         "native:build": [
             "@php artisan optimize:clear --ansi @no_additional_args",
+            "@php artisan app:patch-mac-entitlements --ansi @no_additional_args",
             "Composer\\Config::disableProcessTimeout",
             "@php artisan native:build"
         ]

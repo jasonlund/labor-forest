@@ -1,6 +1,7 @@
 <?php
 
 use App\Data\SettingsData;
+use App\Enums\McpPolicy;
 use App\Exceptions\InvalidSettingsFile;
 use App\Services\SettingsService;
 use Illuminate\Support\Facades\Storage;
@@ -45,6 +46,8 @@ describe('loadSettings', function () {
             // a settings file written before the mcp server existed opts into nothing
             ->and($settings->mcp_enabled)->toBeFalse()
             ->and($settings->mcp_read_only)->toBeTrue()
+            // and a file written before the shell policy existed refuses every shell command
+            ->and($settings->mcp_shell_policy)->toBe(McpPolicy::DENY)
             ->and($settings->mcp_port)->toBe(9189);
     });
 
@@ -81,6 +84,23 @@ describe('loadSettings', function () {
         expect(fn () => $this->settings->loadSettings())
             ->toThrow(InvalidSettingsFile::class, 'mcp enabled');
     });
+
+    it('throws when the shell policy is not one the enum defines', function () {
+        $this->disk->put($this->path, settingsYaml(['mcp_shell_policy' => 'sometimes']));
+
+        expect(fn () => $this->settings->loadSettings())
+            ->toThrow(InvalidSettingsFile::class, 'mcp shell policy');
+    });
+
+    it('reads each shell policy back as its enum case', function (McpPolicy $policy) {
+        $this->disk->put($this->path, settingsYaml(['mcp_shell_policy' => $policy->value]));
+
+        expect($this->settings->loadSettings()->mcp_shell_policy)->toBe($policy);
+    })->with([
+        'allow' => [McpPolicy::ALLOW],
+        'require approval' => [McpPolicy::REQUIRE_APPROVAL],
+        'deny' => [McpPolicy::DENY],
+    ]);
 
     it('throws when the mcp port is outside the range a server can be reached on', function (mixed $port) {
         // the same bounds the settings screen enforces, so a hand-edited file cannot name a port the
@@ -134,6 +154,7 @@ describe('saveSettings', function () {
             'mcp_enabled' => false,
             'mcp_port' => 9189,
             'mcp_read_only' => true,
+            'mcp_shell_policy' => 'deny',
             'mcp_token' => null,
             'command_launch_ide' => null,
             'command_launch_browser' => null,
@@ -164,6 +185,7 @@ describe('syncSettingsFile', function () {
             'mcp_enabled',
             'mcp_port',
             'mcp_read_only',
+            'mcp_shell_policy',
             'mcp_token',
             'command_launch_ide',
             'command_launch_browser',

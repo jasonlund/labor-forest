@@ -36,11 +36,11 @@ class FindProjectByPathTool extends Tool
                 ->loadProjects()
                 ->firstWhere(fn (ProjectData $data) => $data->path === $path);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         if (! $project) {
-            return Response::error('Failed to find project.');
+            return Response::error('Failed to find project.')->asAssistant();
         }
 
         return Response::resourceLink(

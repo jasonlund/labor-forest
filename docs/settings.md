@@ -22,7 +22,25 @@ Dark mode is controlled by a toggle switch and is enabled by default. This toggl
 
 LaborForest can expose itself to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io). The server is local: it listens on `127.0.0.1` only, and it runs for as long as the app does. This section covers the settings; the tools and resources the server exposes, and what an agent can do with them, are covered in [MCP](mcp.md).
 
-`Enable MCP` starts and stops the server, and is off by default — an agent reaches nothing until you decide otherwise. `Read only` limits the server to the tools that change nothing, and is on by default, so a newly enabled server can look but not touch. `MCP local port` sets the port it listens on, accepting any whole number from `1024` to `49151` and defaulting to `9189`. Saving a changed port stops the running server and starts a new one on the new port.
+`Enable MCP` starts and stops the server, and is off by default, so an agent reaches nothing until you decide otherwise. `Read only` limits the server to the tools that change nothing, and is on by default, so a newly enabled server can look but not touch. `MCP local port` sets the port it listens on, accepting any whole number from `1024` to `49151` and defaulting to `9189`. Saving a changed port stops the running server and starts a new one on the new port.
+
+### Shell command execution
+
+`Shell command execution` decides what happens when an agent calls one of the four tools that spawn a command on your machine: `run-workflow`, `launch-terminal`, `launch-ide` and `launch-browser`. It defaults to `Deny`, so the first thing you do after turning read-only off is decide this.
+
+| Setting            | What an agent's call does                                                                          |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| `Allow`            | Runs immediately, with no prompt.                                                                    |
+| `Require approval` | Changes nothing. LaborForest comes to the front and shows you what would run, and you decide.         |
+| `Deny`             | Nothing to call: the four tools are not published, and the agent is told no such tool exists.         |
+
+`Deny` withholds the four tools rather than publishing ones that refuse, the same way `Read only` withholds every tool that changes something. Saving a change to this setting therefore changes which tools the server publishes — a client that is already connected may need to reconnect to see the new list.
+
+The field is disabled while `Enable MCP` is off, and while `Read only` is on, because read-only mode already withholds all four tools. Both toggles take effect in the form as you click them, before you save. The setting is stored as `mcp_shell_policy` in `~/.laborforest/settings.yaml`, and the server cannot change it: `update-settings` does not accept it, so an agent cannot loosen its own gate.
+
+A settings file LaborForest cannot read is treated as `Read only` with a `Deny` policy, so a broken file leaves the server publishing only the two tools that change nothing rather than every tool it has.
+
+`Require approval` puts the decision in front of you rather than in front of the agent. What the approval modal shows, what happens when you dismiss it, and what the agent is told meanwhile are covered in [MCP](mcp.md).
 
 With MCP enabled, the section shows one read-only field, `Add to Claude Code`: the one-line `claude mcp add` command that registers the server's endpoint, for example `http://127.0.0.1:9189/mcp/laborforest`. It copies to the clipboard when clicked, and it tracks the port field as you type it, before you save.
 

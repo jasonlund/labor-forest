@@ -2,6 +2,7 @@
 
 use App\Data\SettingsData;
 use App\Enums\McpEndpoint;
+use App\Enums\McpPolicy;
 use App\Enums\McpServerStatus;
 use App\Exceptions\InvalidSettingsFile;
 use App\Filament\Pages\Settings;
@@ -205,6 +206,79 @@ describe('mcp server', function () {
             ->assertHasNoFormErrors();
 
         expect($saved->mcp_read_only)->toBeTrue();
+    });
+
+    it('saves the shell command execution policy', function () {
+        $saved = null;
+
+        $this->mock(SettingsService::class, function (MockInterface $mock) use (&$saved) {
+            $mock->shouldReceive('loadSettings')->andReturn(settingsPageSettingsData(mcpEnabled: true));
+            $mock->shouldReceive('saveSettings')->andReturnUsing(function (SettingsData $settings) use (&$saved) {
+                $saved = $settings;
+            });
+        });
+
+        $this->mock(McpService::class)->shouldReceive('startMcpServer', 'restartMcpServer', 'stopMcpServer');
+
+        Livewire::test(Settings::class)
+            ->fillForm([
+                'mcp_enabled' => true,
+                'mcp_read_only' => false,
+                'mcp_shell_policy' => McpPolicy::REQUIRE_APPROVAL->value,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect($saved->mcp_shell_policy)->toBe(McpPolicy::REQUIRE_APPROVAL);
+    });
+
+    it('refuses to save without a shell command execution policy', function () {
+        ($this->settingsAre)(mcpEnabled: true);
+
+        Livewire::test(Settings::class)
+            ->fillForm(['mcp_enabled' => true, 'mcp_read_only' => false, 'mcp_shell_policy' => null])
+            ->call('save')
+            ->assertHasFormErrors(['mcp_shell_policy' => 'required']);
+    });
+
+    it('offers the policy only once mcp is on and writable', function (bool $mcpEnabled, bool $mcpReadOnly, bool $expected) {
+        ($this->settingsAre)(mcpEnabled: $mcpEnabled);
+
+        // both toggles are live, so the select re-evaluates its disabled state without a save
+        $component = Livewire::test(Settings::class)
+            ->fillForm(['mcp_enabled' => $mcpEnabled, 'mcp_read_only' => $mcpReadOnly]);
+
+        $expected
+            ? $component->assertFormFieldEnabled('mcp_shell_policy')
+            : $component->assertFormFieldDisabled('mcp_shell_policy');
+    })->with([
+        'mcp on and writable' => [true, false, true],
+        // read-only already unregisters every tool that could spawn a shell
+        'mcp on but read-only' => [true, true, false],
+        'mcp off' => [false, false, false],
+    ]);
+
+    it('keeps the policy a disabled field never submits', function () {
+        // as with mcp_port, Filament does not dehydrate a disabled field, so the stored policy is
+        // absent from the saved form state and has to survive through the merge in save()
+        $this->mock(SettingsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadSettings')->andReturn(settingsPageSettingsData(
+                mcpEnabled: true,
+                mcpShellPolicy: McpPolicy::REQUIRE_APPROVAL,
+            ));
+            $mock->shouldReceive('saveSettings')->once()->withArgs(
+                fn (SettingsData $settings) => $settings->mcp_enabled === false
+                    && $settings->mcp_shell_policy === McpPolicy::REQUIRE_APPROVAL,
+            );
+        });
+
+        $this->mock(McpService::class)->shouldReceive('stopMcpServer')->once();
+
+        Livewire::test(Settings::class)
+            ->fillForm(['mcp_enabled' => false])
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertNotified('Settings saved');
     });
 
     it('starts the server when mcp is switched on', function () {
@@ -561,6 +635,7 @@ function settingsPageSettingsData(
     bool $mcpEnabled = true,
     int $mcpPort = 9189,
     bool $mcpReadOnly = false,
+    McpPolicy $mcpShellPolicy = McpPolicy::DENY,
     ?string $mcpToken = null,
 ): SettingsData {
     return new SettingsData(
@@ -568,6 +643,7 @@ function settingsPageSettingsData(
         mcp_enabled: $mcpEnabled,
         mcp_port: $mcpPort,
         mcp_read_only: $mcpReadOnly,
+        mcp_shell_policy: $mcpShellPolicy,
         mcp_token: $mcpToken,
         workflow_step_timeout_seconds: $workflowTimeoutSeconds,
         command_launch_ide: $ide,

@@ -12,7 +12,7 @@ A `Project` is a local git repository. A `Workspace` is one git worktree of that
 
 When you first add a `Project`, it is opened in LaborForest automatically. Adding a project creates a `.laborforest` directory at the root of your project directory, which leaves your git status dirty. The directory initially holds an `ignored` subdirectory, which contains the Workspace's status file and, later, workflow run logs. The `ignored` subdirectory ignores itself in git. The `workflows` directory is created the first time workflows are added to the Workspace.
 
-Because the new directory makes the repository dirty, LaborForest prompts you with three options. `Commit all changes` stages every change in the repository and commits it with the message you provide. `Add to .git/info/exclude` writes `/.laborforest/` to the repository's local exclude file, which is not shared with anyone else. `Do nothing` leaves the git status dirty.
+Because the new directory makes the repository dirty, LaborForest prompts you with three options when you add the Project with the `Add project` button. `Commit all changes` stages every change in the repository and commits it with the message you provide. `Add to .git/info/exclude` writes `/.laborforest/` to the repository's local exclude file, which is not shared with anyone else. `Do nothing` leaves the git status dirty.
 
 If you are working on a team where multiple people use LaborForest, commit the directory. If you do not want LaborForest to leave any trace in your repository, add the directory to `.git/info/exclude`.
 
@@ -67,7 +67,7 @@ The `Workflows` table row action button opens a menu listing every `Workflow` th
 
 Selecting a Workflow opens a modal listing its steps, each with a checkbox that is checked by default. Uncheck a step to skip it. `Run` starts the run and keeps you on the Project screen, and `Run & watch` starts the run and takes you straight to its live log.
 
-If no Workflows exist yet, the menu offers `Create example workflows`, which lets you choose between the `Bare`, `JavaScript`, and `Laravel` example sets. This entry disappears once any Workflow exists in the Project.
+If the Workspace holds no Workflows of its own, the menu offers `Create example workflows`, which lets you choose between the `Bare`, `JavaScript`, and `Laravel` example sets. The check is per Workspace rather than per Project: the entry disappears for a Workspace as soon as that Workspace's own `workflows` directory holds one, so a Workspace created before you wrote any Workflows still offers it while its siblings do not.
 
 **Important**: Workflows are copied from the base branch at the time of Workspace creation. It is recommended to establish your Workflows in your `main` branch before continuing with additional Workspaces.
 

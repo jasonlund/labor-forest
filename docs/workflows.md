@@ -62,7 +62,7 @@ steps:
 
 `resource_type` must be `workflow` for the file to be recognized. `sort_order` and `steps` are required. `require_status` and `ending_status` are optional.
 
-A Workflow with an empty `steps` list never appears in the menu. A file that declares `resource_type: workflow` but fails validation stops the entire `Workflows` menu from loading for that Workspace, so a single malformed file hides every Workflow until you fix it.
+A Workflow with an empty `steps` list never appears in the menu. A file that declares `resource_type: workflow` but fails validation stops the whole Project screen from loading, not just that Workspace's `Workflows` menu: the page renders an `Issue Loading Project` callout naming the file and what is wrong with it, in place of the Workspace table and its actions, so a single malformed file makes the Project unusable until you fix it.
 
 ### Required and ending statuses
 
@@ -83,7 +83,7 @@ A Workspace in `error` or `unknown` can run nothing at all. Use the `Override st
 
 While a Workflow runs, the Workspace status is `working`. If any step fails, the final status is `error`. Otherwise the Workflow's `ending_status` is applied. A Workflow that declares no `ending_status` returns the Workspace to the status it held before the run started.
 
-This gate is enforced when the run is dispatched, not only in the UI, so a run started from the CLI is subject to the same rules.
+This gate is enforced when the run is dispatched, not only in the UI, so a run started from the CLI is subject to the same rules. A run an AI agent asks for over MCP is too, though a run held for your approval is checked at the moment you approve it rather than when the agent asked. See [MCP](mcp.md).
 
 ### Sort order
 

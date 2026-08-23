@@ -37,13 +37,13 @@ class WorkspacesResource extends Resource implements HasUriTemplate
         $project = rescue(fn () => $projectService->loadProjects()->firstWhere('uuid', $request->get('uuid')));
 
         if (! $project) {
-            return Response::error('Failed to load project.');
+            return Response::error('Failed to load project.')->asAssistant();
         }
 
         $workspaces = rescue(fn () => $projectService->loadProjectWorkspaces($project->path));
 
         if (! $workspaces) {
-            return Response::error('Failed to load project workspaces.');
+            return Response::error('Failed to load project workspaces.')->asAssistant();
         }
 
         return $this->json($workspaces->map(fn (WorkspaceData $data) => $data->toMcpResource())->values()->all());

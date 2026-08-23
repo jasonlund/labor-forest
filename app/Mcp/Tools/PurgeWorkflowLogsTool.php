@@ -48,7 +48,7 @@ class PurgeWorkflowLogsTool extends Tool
             ['purged' => $purged, 'skipped' => $skipped] = app(WorkflowService::class)
                 ->purgeWorkflowLogs($workspace, $workflowName);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         broadcast(new GlobalRefresh);

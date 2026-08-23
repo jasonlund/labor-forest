@@ -1,6 +1,6 @@
 ---
 name: service-testing
-description: "Use this skill whenever writing, editing, fixing, or reviewing a Pest feature test for a class in app/Services/ — GitService, ProjectsService, WorkflowService, SettingsService, LaunchService, VariableReplacementService, ProcessEnvironmentService. Trigger on any request to test a service, cover a service method, add failure cases for a service, fake or mock the git calls, avoid spawning shell commands in tests, reach the suite-wide user_home fake, or stub the filesystem for a service. Also trigger when a service test fails with 'Disk [extras] does not have a configured driver', with 'Attempted process [...] without a matching fake', with a BadMethodCallException from File::isFile during a spawned process, or when deciding where a test double should live. Covers: the ProcessSpy doubling pattern over Process::fake(), the one surviving LaunchService seam, container-bound collaborators, the suite-wide user_home fake, File facade stubbing, success plus failure coverage, and the no-preexisting-state rule. Do not use for Filament pages, Livewire components, jobs, or app/Data/ DTOs."
+description: "Use this skill whenever writing, editing, fixing, or reviewing a Pest feature test for a class in app/Services/ — GitService, ProjectsService, WorkflowService, SettingsService, LaunchService, VariableReplacementService, ProcessEnvironmentService, CliToolsService, McpService, GitHubService. Trigger on any request to test a service, cover a service method, add failure cases for a service, fake or mock the git calls, avoid spawning shell commands in tests, reach the suite-wide user_home fake, or stub the filesystem for a service. Also trigger when a service test fails with 'Disk [extras] does not have a configured driver', with 'Attempted process [...] without a matching fake', with a BadMethodCallException from File::isFile during a spawned process, or when deciding where a test double should live. Covers: the ProcessSpy doubling pattern over Process::fake(), the one surviving LaunchService seam, container-bound collaborators, the suite-wide user_home fake, File facade stubbing, success plus failure coverage, and the no-preexisting-state rule. Do not use for Filament pages, Livewire components, jobs, or app/Data/ DTOs."
 license: MIT
 metadata:
   author: labor-forest
@@ -131,9 +131,9 @@ through `ExposedLaunchService` (both at the bottom of `LaunchServiceTest`).
 
 ## Doubling Collaborators
 
-No service has a constructor — collaborators are pulled inline with `app(GitService::class)`, and nothing
-is registered as a singleton (`AppServiceProvider::register()` is empty), so the container builds a fresh
-instance per resolve.
+No service has a constructor — collaborators are pulled inline with `app(GitService::class)`, and the
+only binding in `AppServiceProvider::register()` is `McpService`, bound **scoped**, so the container
+builds a fresh instance per resolve for everything else and one per request for that.
 
 A collaborator that only shells out needs no double at all: let the real one run and fake the process
 beneath it. `ProjectsServiceTest` does exactly this — it binds no `GitService`.
@@ -176,6 +176,9 @@ sequence spying comes free.
 | `VariableReplacementService` | `File::shouldReceive('isFile')` and `get()` for the workspace `.env` | `UnresolvedVariable::unknownVariable`; `::missingEnvironmentVariable` (thrown from inside the preg callback); `::replacementFailed` |
 | `LaunchService` | the `launchProcess()` seam above; `FakeProcessEnvironmentService`; bind a fake `SettingsService` | Silent early return on a null or empty command; `InvalidSettingsFile` and `UnresolvedVariable` propagating through |
 | `ProcessEnvironmentService` | `File::shouldReceive` for `base_path('.env')` | No typed exceptions. Assert presence and absence of **specific keys** — never whole-array equality, because `getenv()` reads the real host environment and cannot be doubled |
+| `CliToolsService` | the globally faked `user_home` disk; `ProcessSpy::install()` for the `ln -sf` and its `osascript` fallback; bind a fake `SettingsService` | `InvalidPendingFile`; a `pending.yaml` deleted before it is parsed, so a malformed one cannot wedge every later launch; the failure paths that come back as a URL carrying the message rather than throwing |
+| `McpService` | the `ChildProcess` facade; `Http::fake()` for the handshake; the globally faked `user_home` disk; `ImpatientMcpService` from `tests/Fakes/` to shorten the port and stop polls | `McpServerNotEnabled`; `McpServerPortInUse`; `McpServerNotStopped`; `McpServerUnhealthy`. Both registration gates — `isReadOnly()` and `deniesShellCommands()` — answer an unreadable settings file with the **narrower** mode, and share one memoized read per request |
+| `GitHubService` | `Http::fake()` for the releases endpoint; `Cache` | A release list that is all prereleases, all drafts, or empty; a failed request escaping `Cache::remember()` so it is never cached |
 
 Two cross-cutting notes:
 

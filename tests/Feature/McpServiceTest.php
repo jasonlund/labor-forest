@@ -4,6 +4,7 @@ use App\Data\SettingsData;
 use App\Enums\ChildProcessAlias;
 use App\Enums\HostEnvKey;
 use App\Enums\McpEndpoint;
+use App\Enums\McpPolicy;
 use App\Enums\McpServerStatus;
 use App\Exceptions\McpServerNotEnabled;
 use App\Exceptions\McpServerNotStopped;
@@ -339,10 +340,40 @@ describe('isReadOnly', function () {
             ->and($this->mcp->isReadOnly())->toBeTrue();
     });
 
-    it('publishes every tool when the settings file cannot be read', function () {
+    it('answers a settings file it cannot read with the narrower mode', function () {
         $this->disk->put($this->path, "just a string\n");
 
-        expect($this->mcp->isReadOnly())->toBeFalse();
+        expect($this->mcp->isReadOnly())->toBeTrue();
+    });
+});
+
+describe('deniesShellCommands', function () {
+    it('answers what the settings file says', function (McpPolicy $policy, bool $denied) {
+        ($this->writeSettings)(['mcp_shell_policy' => $policy->value]);
+
+        expect($this->mcp->deniesShellCommands())->toBe($denied);
+    })->with([
+        'allow' => [McpPolicy::ALLOW, false],
+        'require approval' => [McpPolicy::REQUIRE_APPROVAL, false],
+        'deny' => [McpPolicy::DENY, true],
+    ]);
+
+    it('answers a settings file it cannot read by denying', function () {
+        $this->disk->put($this->path, "just a string\n");
+
+        expect($this->mcp->deniesShellCommands())->toBeTrue();
+    });
+
+    it('shares one read of the settings file with the read-only gate', function () {
+        ($this->writeSettings)(['mcp_read_only' => false, 'mcp_shell_policy' => McpPolicy::ALLOW->value]);
+
+        $this->mock(SettingsService::class)
+            ->shouldReceive('loadSettings')->once()
+            ->andReturn(new SettingsData(mcp_read_only: false, mcp_shell_policy: McpPolicy::ALLOW));
+
+        expect($this->mcp->isReadOnly())->toBeFalse()
+            ->and($this->mcp->deniesShellCommands())->toBeFalse()
+            ->and($this->mcp->deniesShellCommands())->toBeFalse();
     });
 });
 

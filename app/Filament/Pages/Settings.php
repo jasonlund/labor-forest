@@ -7,6 +7,7 @@ use App\Concerns\Filament\Pages\NormalizesLaunchCommands;
 use App\Data\McpServerHealthData;
 use App\Data\SettingsData;
 use App\Enums\McpEndpoint;
+use App\Enums\McpPolicy;
 use App\Enums\Variable;
 use App\Exceptions\InvalidSettingsFile;
 use App\Exceptions\McpServerUnhealthy;
@@ -15,6 +16,7 @@ use App\Services\McpService;
 use App\Services\SettingsService;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\KeyValueEntry;
@@ -102,7 +104,10 @@ class Settings extends Page
                     ->description('Configure the local MCP server.')
                     ->extraAttributes(['class' => 'h-full [&>.fi-section]:flex-1'])
                     ->schema([
-                        Grid::make(4)
+                        Grid::make([
+                            'default' => 1,
+                            'xl' => 5,
+                        ])
                             ->schema([
                                 Toggle::make('mcp_enabled')
                                     ->label('Enable MCP')
@@ -111,7 +116,15 @@ class Settings extends Page
                                 Toggle::make('mcp_read_only')
                                     ->label('Read only')
                                     ->disabled(fn (Get $get) => ! $get('mcp_enabled'))
-                                    ->inline(false),
+                                    ->inline(false)
+                                    ->live(),
+                                Select::make('mcp_shell_policy')
+                                    ->disabled(fn (Get $get) => ! $get('mcp_enabled') || $get('mcp_read_only'))
+                                    ->label('Shell command execution')
+                                    ->options(McpPolicy::class)
+                                    ->native(false)
+                                    ->selectablePlaceholder(false)
+                                    ->required(),
                                 TextInput::make('mcp_port')
                                     ->disabled(fn (Get $get) => ! $get('mcp_enabled'))
                                     ->label('MCP local port')

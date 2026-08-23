@@ -3,6 +3,8 @@
 use App\Enums\HostEnvKey;
 use App\Http\Middleware\AllowOnlyMcpRequests;
 use App\Providers\AppServiceProvider;
+use Filament\Support\Facades\FilamentView;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Contracts\Http\Kernel;
 use Native\Desktop\Http\Middleware\PreventRegularBrowserAccess;
 
@@ -48,5 +50,14 @@ describe('boot', function () {
 
         expect($this->kernel->getGlobalMiddleware())->toContain(PreventRegularBrowserAccess::class)
             ->and($this->kernel->getGlobalMiddleware())->not->toContain(AllowOnlyMcpRequests::class);
+    });
+});
+
+describe('render hooks', function () {
+    it('hangs the mcp approval modal off every page of the panel', function () {
+        // the parked action mounts into this component, so a panel page that does not render it
+        // leaves the user with an approval they are never shown
+        expect((string) FilamentView::renderHook(PanelsRenderHook::BODY_END))
+            ->toContain('mcp-action-pending-approval-modal');
     });
 });

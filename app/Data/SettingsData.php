@@ -3,8 +3,12 @@
 namespace App\Data;
 
 use App\Contracts\McpResource;
+use App\Enums\McpPolicy;
 use App\Rules\ValidVariables;
 use Illuminate\Support\Arr;
+use Illuminate\Validation\Rule;
+use Spatie\LaravelData\Attributes\WithCast;
+use Spatie\LaravelData\Casts\EnumCast;
 use Spatie\LaravelData\Data;
 
 class SettingsData extends Data implements McpResource
@@ -21,6 +25,8 @@ class SettingsData extends Data implements McpResource
         public bool $mcp_enabled = false,
         public int $mcp_port = 9189,
         public bool $mcp_read_only = true,
+        #[WithCast(EnumCast::class)]
+        public McpPolicy $mcp_shell_policy = McpPolicy::DENY,
         public ?string $mcp_token = null,
         public ?string $command_launch_ide = null,
         public ?string $command_launch_browser = null,
@@ -65,6 +71,11 @@ class SettingsData extends Data implements McpResource
             'mcp_read_only' => [
                 'required',
                 'boolean',
+            ],
+            'mcp_shell_policy' => [
+                'required',
+                'string',
+                Rule::enum(McpPolicy::class),
             ],
             'mcp_token' => [
                 'nullable',

@@ -7,6 +7,7 @@ use App\Data\SettingsData;
 use App\Enums\ChildProcessAlias;
 use App\Enums\HostEnvKey;
 use App\Enums\McpEndpoint;
+use App\Enums\McpPolicy;
 use App\Enums\McpServerStatus;
 use App\Exceptions\InvalidSettingsFile;
 use App\Exceptions\McpServerNotEnabled;
@@ -61,9 +62,12 @@ class McpService
     protected const int PORT_POLL_ATTEMPTS = 5;
 
     /**
-     * The memoized answer of isReadOnly().
+     * The settings the registration gates are answered from, memoized for the request.
+     *
+     * `false` records a file that could not be read, which is distinct from not having looked yet
+     * and must not send every later gate back to the filesystem.
      */
-    protected ?bool $readOnly = null;
+    protected SettingsData|false|null $registrationSettings = null;
 
     /**
      * Start the MCP server, unless it is already running.
@@ -120,20 +124,45 @@ class McpService
     /**
      * Whether the server publishes only the tools that change nothing.
      *
-     * Memoized, because every tool asks on every request while the server builds its primitive
-     * list, and each answer would otherwise re-read and re-validate the settings file. The service
-     * is bound scoped for exactly this reason.
-     *
-     * A settings file that cannot be read answers false, so an unreadable file is never mistaken
-     * for a mode the user asked for.
+     * A settings file that cannot be read answers true. A file the app cannot parse is not
+     * evidence that the user opted into the permissive mode, so it is never read as one: an
+     * unreadable file leaves the server publishing only the tools that change nothing.
      */
     public function isReadOnly(): bool
     {
-        return $this->readOnly ??= rescue(
-            fn (): bool => app(SettingsService::class)->loadSettings()->mcp_read_only,
-            false,
-            report: false,
-        );
+        return $this->registrationSettings()?->mcp_read_only ?? true;
+    }
+
+    /**
+     * Whether the user's shell command execution policy withholds the tools that spawn a command.
+     *
+     * A settings file that cannot be read answers true here too, so the four tools that spawn a
+     * command are withheld rather than published by a file nobody can read.
+     */
+    public function deniesShellCommands(): bool
+    {
+        return ($this->registrationSettings()?->mcp_shell_policy ?? McpPolicy::DENY) === McpPolicy::DENY;
+    }
+
+    /**
+     * The settings both registration gates are answered from, read once per request.
+     *
+     * Every gated tool asks on every request while the server builds its primitive list, and each
+     * answer would otherwise re-read and re-validate the settings file. The service is bound scoped
+     * for exactly this reason — memoizing per request rather than per process is also what lets a
+     * mode or a policy changed on the Settings screen decide the next tool call without a restart.
+     */
+    protected function registrationSettings(): ?SettingsData
+    {
+        if ($this->registrationSettings === null) {
+            $this->registrationSettings = rescue(
+                fn (): SettingsData => app(SettingsService::class)->loadSettings(),
+                false,
+                report: false,
+            );
+        }
+
+        return $this->registrationSettings ?: null;
     }
 
     /**
