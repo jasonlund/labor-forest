@@ -1,6 +1,6 @@
 ---
 name: livewire-testing
-description: "Use this skill whenever writing, editing, fixing, or reviewing a Pest feature test for a Livewire component in app/Livewire/ (WorkflowLogStep, WorkflowNotifications) or a Filament class in app/Filament/ — the Project, ProjectWorkflows, WorkflowLog and Settings pages, the AddProjectWidget and ProjectsLoadErrorWidget widgets. Trigger on any request to test a page, a widget, a page action, a table record action, a bulk action, a form save, a #[On('native:...')] broadcast listener, a #[Computed] property, a #[Locked] property, or a Filament notification. Also trigger when a component test fails with 'Call to undefined function livewire()', 'Cannot redeclare function', 'Record arrays must have a unique [key] entry', a null $record in a table action closure, a BadMethodCallException from a mocked service, or a NativePHP System::timezone() / Dialog::new() call reaching the real Electron client. Covers: Livewire::test() mounting, route params as mount args, TestAction for table actions, mocking services with \\$this->mock(), fake subclasses from tests/Fakes/, test-only component subclasses as seams, the suite-wide user_home fake, and the no-preexisting-state rule. Do not use for app/Services/ (see service-testing), jobs, or app/Data/ DTOs."
+description: "Use this skill whenever writing, editing, fixing, or reviewing a Pest feature test for a Livewire component in app/Livewire/ (WorkflowLogStep, WorkflowNotifications, RefreshButton, McpActionPendingApprovalModal) or a Filament class in app/Filament/ — the Dashboard, Project, ProjectWorkflows, WorkflowLog and Settings pages, and the AddProjectWidget, ProjectsLoadErrorWidget, AppVersionWidget, InstallCliToolsWidget, ReadDocsWidget and LegalNoticesWidget widgets. Trigger on any request to test a page, a widget, a page action, a table record action, a bulk action, a form save, a #[On('native:...')] broadcast listener, a #[Computed] property, a #[Locked] property, or a Filament notification. Also trigger when a component test fails with 'Call to undefined function livewire()', 'Cannot redeclare function', 'Record arrays must have a unique [key] entry', a null $record in a table action closure, a BadMethodCallException from a mocked service, or a NativePHP System::timezone() / Dialog::new() call reaching the real Electron client. Covers: Livewire::test() mounting, route params as mount args, TestAction for table actions, mocking services with \\$this->mock(), fake subclasses from tests/Fakes/, test-only component subclasses as seams, the suite-wide user_home fake, and the no-preexisting-state rule. Do not use for app/Services/ (see service-testing), jobs, or app/Data/ DTOs."
 license: MIT
 metadata:
   author: labor-forest
@@ -89,9 +89,10 @@ genuine smoke test, and say so in the test name.
 
 ## Doubling Collaborators
 
-Services have no constructor, nothing is registered as a singleton (`AppServiceProvider::register()` is
-empty), and components resolve them per call with `app(X::class)` — so a substitution registered in
-`beforeEach` is picked up by the component.
+Services have no constructor and components resolve them per call with `app(X::class)`, so a
+substitution registered in `beforeEach` is picked up by the component. The one binding in
+`AppServiceProvider::register()` is `McpService`, bound **scoped** — a substitution still wins,
+because the scoped instance is resolved on first use rather than at registration.
 
 **Default to `$this->mock()`**, stubbing exactly the methods the code path reaches.
 
@@ -121,16 +122,18 @@ A Mockery mock is strict: any method the path reaches that was not stubbed throw
 | `Project` | `ProjectsService::{loadProject, loadProjectWorkspaces, listProjectLocalBranches, addProjectWorkspace, updateProject, updateProjectWorkspaceStatus, removeProject, doesAnyProjectWorkspaceWorkflowExist, initializeWorkspaceStarterWorkflows}`, `WorkflowService::{loadWorkflows, loadSteps, dispatchWorkflow}`, `SettingsService::loadSettings`, `LaunchService::{launchTerminal, launchIde, launchBrowser}`, `GitService::{status, currentBranch, commitAll, removeWorktree}` |
 | `ProjectWorkflows` | `ProjectsService::{loadProject, loadProjectWorkspaces}`, `WorkflowService::loadWorkflowLogData`, plus `System::timezone()` |
 | `WorkflowLog` | `ProjectsService::{loadProject, loadProjectWorkspaces}`, `WorkflowService::loadWorkflowLogDatum` |
-| `Settings` | `SettingsService::{loadSettings, saveSettings}` |
+| `Settings` | `SettingsService::{loadSettings, saveSettings}`, and on the MCP paths only — a `save()` that flips `mcp_enabled` or changes `mcp_port`, and the `test_mcp_connection` / `regenerate_mcp_token` actions — `McpService::{startMcpServer, restartMcpServer, stopMcpServer, regenerateMcpToken, checkMcpServer}`. `mount()` reaches none of them. |
 | `WorkflowNotifications` | `ProjectsService::loadProject` (inside `rescue()`, for the notification body) |
-| both widgets | `ProjectsService::loadProjects` (via `HasProjectsLoadError`) |
+| `AddProjectWidget`, `ProjectsLoadErrorWidget` | `ProjectsService::loadProjects` (via `HasProjectsLoadError`) |
 
 `SettingsService::loadSettings()` is called while the table and its actions are **built**, not only in
 `mount()` — stub it in every `Project` and `Settings` test, including failure tests.
 
 **Escalate to a fake subclass in `tests/Fakes/`** when the test asserts *which* calls happened or in
-what order, or when one method must answer differently across calls. `tests/Fakes/FakeGitService.php`
-is the model; bind it with `$this->instance(GitService::class, $this->git)`. Extract a new fake to
+what order, or when one method must answer differently across calls. `FakeProjectsService` in
+`tests/Feature/WorkflowServiceTest.php` is the model — it records every status write as a
+`[path, status]` pair in call order — and it is bound with
+`$this->instance(ProjectsService::class, $fake)`. Extract a new fake to
 `tests/Fakes/` only once a second file needs it — `"Tests\\": "tests/"` is already in `composer.json`
 `autoload-dev`.
 
@@ -204,12 +207,12 @@ it('saves settings', function () {
     $this->mock(SettingsService::class, function (MockInterface $mock) {
         $mock->shouldReceive('loadSettings')->andReturn(new SettingsData);
         $mock->shouldReceive('saveSettings')->once()->withArgs(
-            fn (SettingsData $settings) => $settings->workflow_timeout_seconds === 90
+            fn (SettingsData $settings) => $settings->workflow_step_timeout_seconds === 90
         );
     });
 
     Livewire::test(Settings::class)
-        ->fillForm(['workflow_timeout_seconds' => 90])
+        ->fillForm(['workflow_step_timeout_seconds' => 90])
         ->call('save')
         ->assertHasNoFormErrors()
         ->assertNotified('Settings saved');

@@ -32,7 +32,7 @@ class SettingsResource extends Resource
         $settings = rescue(fn () => app(SettingsService::class)->loadSettings());
 
         if (! $settings) {
-            return Response::error('Failed to load settings.');
+            return Response::error('Failed to load settings.')->asAssistant();
         }
 
         return $this->json($settings->toMcpResource());

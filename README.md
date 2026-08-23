@@ -45,6 +45,8 @@ Pull requests are welcome! Contributions are accepted under the GPL-3.0-or-later
 
 - Use your favorite agentic coding tool to control LaborForest
 - Configure the local MCP server as read-only or writeable
+- Choose whether an agent may run commands through your shell: allow, require your approval, or deny
+    - approve a Workflow run or a launch command in the app, seeing exactly what will run
 - Manage Projects and Workflows
 - Write, run, validate, and diagnose Workflows
 - Update configured settings

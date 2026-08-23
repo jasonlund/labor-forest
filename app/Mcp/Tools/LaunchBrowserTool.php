@@ -2,8 +2,9 @@
 
 namespace App\Mcp\Tools;
 
-use App\Concerns\Mcp\RegistersWhenWritable;
+use App\Concerns\Mcp\IsShellCommandExecutionTool;
 use App\Concerns\Mcp\ResolvesWorkspace;
+use App\Enums\McpActionPendingApprovalType;
 use App\Services\LaunchService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -21,7 +22,7 @@ use Throwable;
 #[Description('Launch a browser for the given workspace path using the preconfigured command.')]
 class LaunchBrowserTool extends Tool
 {
-    use RegistersWhenWritable;
+    use IsShellCommandExecutionTool;
     use ResolvesWorkspace;
 
     /**
@@ -38,12 +39,14 @@ class LaunchBrowserTool extends Tool
         [$project, $workspace] = $resolved;
 
         try {
-            app(LaunchService::class)->launchBrowser($project, $workspace);
+            return $this->executeShellCommandTool(
+                whenAllowed: fn () => app(LaunchService::class)->launchBrowser($project, $workspace),
+                workspacePath: $workspace->path,
+                type: McpActionPendingApprovalType::LAUNCH_BROWSER,
+            );
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
-
-        return Response::text('success')->asAssistant();
     }
 
     /**

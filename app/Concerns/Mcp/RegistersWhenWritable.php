@@ -12,9 +12,11 @@ use App\Services\McpService;
  * nothing in LaborForest but do spawn a user-configured command.
  *
  * The answer is memoized on McpService, because every tool asks on every request while the server
- * builds its primitive list. A settings file that cannot be read registers the tool: answering the
- * other way would meet an unreadable file with a silently shortened tool list, which reads to a
- * client as a server that simply does less, and read-only is a mode the user opts into.
+ * builds its primitive list. A settings file that cannot be read drops the tool: a file the app
+ * cannot parse says nothing about which mode the user wanted, so it is answered with the narrower
+ * one. The shortened tool list that leaves behind is ambiguous between a broken file and a
+ * deliberately restricted server, which is what the settings resource and the Settings screen's
+ * `Test connection` button are for — neither is gated on registration.
  */
 trait RegistersWhenWritable
 {

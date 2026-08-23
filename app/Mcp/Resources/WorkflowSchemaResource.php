@@ -22,7 +22,7 @@ use Laravel\Mcp\Server\Resource;
 
 #[Name('workflow-schema')]
 #[Title('Workflow Schema')]
-#[Description('The grammar of a workflow file: where it lives, every key it may carry, the three step types, and how a step is executed. Read this before writing or editing a workflow, because no tool writes one for you and `validate-workflow` only judges a file that already exists.')]
+#[Description('The grammar of a workflow file: where it lives, every key it may carry, the three step types, and how a step is executed. Read this before writing or editing a workflow, because no tool authors one for you and `validate-workflow` only judges a file that already exists.')]
 #[Uri(McpUri::WORKFLOW_SCHEMA->value)]
 #[MimeType('application/json')]
 class WorkflowSchemaResource extends Resource

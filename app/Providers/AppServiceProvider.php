@@ -50,6 +50,11 @@ class AppServiceProvider extends ServiceProvider
             PanelsRenderHook::BODY_END,
             fn (): View => view('filament.global.workflow-notifications'),
         );
+
+        FilamentView::registerRenderHook(
+            PanelsRenderHook::BODY_END,
+            fn (): View => view('filament.global.mcp-action-pending-approval-modal'),
+        );
     }
 
     /**

@@ -5,11 +5,14 @@ use App\Data\SettingsData;
 use App\Data\WorkflowStepData;
 use App\Data\WorkspaceData;
 use App\Enums\Disk;
+use App\Enums\McpActionPendingApprovalType;
+use App\Enums\McpPolicy;
 use App\Enums\McpUri;
 use App\Enums\Variable;
 use App\Enums\WorkflowStepType;
 use App\Enums\WorkspaceStatus;
 use App\Events\GlobalRefresh;
+use App\Events\McpActionPendingApproval;
 use App\Exceptions\GitOperationFailed;
 use App\Exceptions\InvalidProjectsFile;
 use App\Exceptions\InvalidSettingsFile;
@@ -62,10 +65,12 @@ use Mockery\MockInterface;
 
 beforeEach(function () {
     // Read-only is what a fresh settings file carries, and every mutating tool is registered only
-    // when it is off (Concerns\Mcp\RegistersWhenWritable). The tools below are the writable ones,
-    // so the mode they need is written out rather than inherited from a disk that has no file.
+    // when it is off (Concerns\Mcp\RegistersWhenWritable). A fresh file also denies every shell
+    // command (Concerns\Mcp\IsShellCommandExecutionTool). The tools below are the writable ones,
+    // so the modes they need are written out rather than inherited from a disk that has no file.
     Storage::disk(Disk::USER_HOME->value)->put('.laborforest/settings.yaml', settingsYaml([
         'mcp_read_only' => false,
+        'mcp_shell_policy' => McpPolicy::ALLOW->value,
     ]));
 });
 
@@ -99,9 +104,13 @@ it('tells connecting clients what the server is for and what it will not do', fu
         // the statuses the run gate turns on
         ->toContain('Only `ready` and `suspended` may run anything at all')
         // nothing else warns that a tool call runs the user's shell unprompted
-        ->toContain('Nothing on the LaborForest side asks the user to confirm a tool call.')
+        ->toContain('nothing else here asks the user to confirm a tool call.')
+        // the answer a parked call gets, which reads like neither a success nor a failure
+        ->toContain('pending manual approval in application UI')
+        // a parked call is waiting on the user, so calling again only parks another one
+        ->toContain('do not call the tool again to retry')
         // the settings the server refuses to change out from under its own client
-        ->toContain('cannot change `mcp_enabled`, `mcp_port`, `mcp_read_only` or the token')
+        ->toContain('cannot change `mcp_enabled`, `mcp_port`, `mcp_read_only`, `mcp_shell_policy` or the')
         // a short tool list is a mode the user chose, not something to route around
         ->toContain('read-only mode')
         // no tool writes a workflow file, so the grammar has to be fetched before one is written
@@ -430,7 +439,7 @@ describe('prompts', function () {
             ->assertName('author-workflow')
             // the grammar is fetched rather than recalled, because no tool writes a workflow file
             ->assertSee('laborforest://workflow-schema')
-            ->assertSee('no tool on this server writes workflow files')
+            ->assertSee('no tool on this server authors a workflow file')
             // the check that has no consequences, as against starting a run
             ->assertSee('validate-workflow')
             ->assertSee('Do not run the workflow to test it.')
@@ -552,6 +561,55 @@ describe('tools', function () {
             ]);
     });
 
+    it('withholds the tools that spawn a command while the shell policy denies them', function () {
+        $this->mock(SettingsService::class)
+            ->shouldReceive('loadSettings')->once()
+            ->andReturn(new SettingsData(mcp_read_only: false, mcp_shell_policy: McpPolicy::DENY));
+
+        $context = (new LaborForestServer($this->mock(Transport::class)))->createContext();
+
+        expect($context->tools()->map(fn (Tool $tool) => $tool->name())->values()->all())
+            ->toBe([
+                'find-project-by-path',
+                'add-project',
+                'remove-project',
+                'add-workspace',
+                'add-workspace-example-workflows',
+                'validate-workflow',
+                'override-workspace-status',
+                'update-settings',
+                'update-project-launch-commands',
+                'purge-workflow-logs',
+            ]);
+    });
+
+    it('publishes the tools that spawn a command while the shell policy asks for approval', function () {
+        $settings = mcpWritableSettings();
+        $settings->mcp_shell_policy = McpPolicy::REQUIRE_APPROVAL;
+
+        $this->mock(SettingsService::class)
+            ->shouldReceive('loadSettings')->once()->andReturn($settings);
+
+        $context = (new LaborForestServer($this->mock(Transport::class)))->createContext();
+
+        expect($context->tools())->toHaveCount(14);
+    });
+
+    it('withholds the tools that spawn a command in read-only mode whatever the shell policy says', function () {
+        // read-only is the outer gate: an allowing policy cannot publish what it withholds
+        $this->mock(SettingsService::class)
+            ->shouldReceive('loadSettings')->once()
+            ->andReturn(new SettingsData(mcp_read_only: true, mcp_shell_policy: McpPolicy::ALLOW));
+
+        $context = (new LaborForestServer($this->mock(Transport::class)))->createContext();
+
+        expect($context->tools()->map(fn (Tool $tool) => $tool->name())->values()->all())
+            ->toBe([
+                'find-project-by-path',
+                'validate-workflow',
+            ]);
+    });
+
     it('counts the launch tools as writes, since they spawn a command the user configured', function () {
         $this->mock(SettingsService::class)
             ->shouldReceive('loadSettings')->once()
@@ -563,14 +621,20 @@ describe('tools', function () {
             ->not->toContain('launch-ide', 'launch-terminal', 'launch-browser');
     });
 
-    it('publishes every tool when the settings file cannot be read, rather than a shortened list', function () {
+    it('publishes only the tools that change nothing when the settings file cannot be read', function () {
+        // both registration gates answer an unreadable file with the narrower mode, so a file the
+        // app cannot parse is never mistaken for one that opted into publishing everything
         $this->mock(SettingsService::class)
             ->shouldReceive('loadSettings')->once()
             ->andThrow(new InvalidSettingsFile('.laborforest/settings.yaml', ['broken']));
 
         $context = (new LaborForestServer($this->mock(Transport::class)))->createContext();
 
-        expect($context->tools())->toHaveCount(14);
+        expect($context->tools()->map(fn (Tool $tool) => $tool->name())->values()->all())
+            ->toBe([
+                'find-project-by-path',
+                'validate-workflow',
+            ]);
     });
 
     it('marks running a workflow destructive, because a step is arbitrary shell', function () {
@@ -686,6 +750,54 @@ describe('tools', function () {
 
         LaborForestServer::tool($tool, ['path' => '/tmp/repo-feature'])
             ->assertHasErrors(['launch failed']);
+    })->with('launch tools');
+
+    it('parks a launch behind the user rather than running it when the policy asks for approval', function (string $tool, string $launchMethod, McpActionPendingApprovalType $type) {
+        mcpShellPolicy(McpPolicy::REQUIRE_APPROVAL);
+        Event::fake([McpActionPendingApproval::class]);
+
+        $this->mock(ProjectsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadProjectWorkspace')->once()->andReturn(componentWorkspaceData('/tmp/repo-feature'));
+            $mock->shouldReceive('loadProjectFromWorkspace')->once()
+                ->andReturn(componentProjectData('11111111-1111-1111-1111-111111111111', '/tmp/repo'));
+        });
+
+        $this->mock(LaunchService::class)->shouldNotReceive($launchMethod);
+
+        LaborForestServer::tool($tool, ['path' => '/tmp/repo-feature'])
+            ->assertOk()
+            ->assertSee('pending manual approval in application UI');
+
+        assertApprovalParked($type);
+    })->with('launch tools');
+
+    it('withholds the launch rather than publishing a tool that could only refuse it', function (string $tool, string $launchMethod, McpActionPendingApprovalType $type) {
+        // a denied tool is dropped from the server, and the package resolves a call through the
+        // same eligibility filter as the listing, so the tool is reported as one that is not there
+        mcpShellPolicy(McpPolicy::DENY);
+        Event::fake([McpActionPendingApproval::class]);
+
+        $this->mock(LaunchService::class)->shouldNotReceive($launchMethod);
+        $this->mock(ProjectsService::class)->shouldNotReceive('loadProjectWorkspace');
+
+        LaborForestServer::tool($tool, ['path' => '/tmp/repo-feature'])
+            ->assertHasErrors(["Tool [{$type->value}] not found."]);
+
+        Event::assertNotDispatched(McpActionPendingApproval::class);
+    })->with('launch tools');
+
+    it('withholds the launch when the settings file cannot be read', function (string $tool, string $launchMethod) {
+        // the gate fails closed at registration now, so an unreadable file withholds the tool
+        // rather than publishing one that answers with the file's errors
+        $this->mock(SettingsService::class)
+            ->shouldReceive('loadSettings')
+            ->andThrow(new InvalidSettingsFile('.laborforest/settings.yaml', ['broken']));
+
+        $this->mock(LaunchService::class)->shouldNotReceive($launchMethod);
+        $this->mock(ProjectsService::class)->shouldNotReceive('loadProjectWorkspace');
+
+        LaborForestServer::tool($tool, ['path' => '/tmp/repo-feature'])
+            ->assertHasErrors(['not found.']);
     })->with('launch tools');
 
     it('links a new workspace to the project owning it', function () {
@@ -1068,8 +1180,9 @@ describe('tools', function () {
             $mock->shouldReceive('loadProjectFromWorkspace')->once()->with('/tmp/repo-feature')->andReturn($project);
         });
 
+        // read-only mode, shell policy, then the step timeout
         $this->mock(SettingsService::class)
-            ->shouldReceive('loadSettings')->twice()
+            ->shouldReceive('loadSettings')->times(3)
             ->andReturn(mcpWritableSettings(new SettingsData(workflow_step_timeout_seconds: 45)));
 
         $this->mock(WorkflowService::class, function (MockInterface $mock) use ($workflowPath) {
@@ -1117,7 +1230,7 @@ describe('tools', function () {
         });
 
         $this->mock(SettingsService::class)
-            ->shouldReceive('loadSettings')->twice()->andReturn(mcpWritableSettings(new SettingsData));
+            ->shouldReceive('loadSettings')->times(3)->andReturn(mcpWritableSettings(new SettingsData));
 
         $this->mock(WorkflowService::class, function (MockInterface $mock) use ($workflowPath) {
             $mock->shouldReceive('workflowPath')->once()->andReturn($workflowPath);
@@ -1129,6 +1242,80 @@ describe('tools', function () {
 
         LaborForestServer::tool(RunWorkflowTool::class, ['path' => '/tmp/repo-feature', 'workflow' => 'up'])
             ->assertHasErrors(['Workflow [up] requires the workspace to be suspended, but it is ready.']);
+    });
+
+    it('parks a workflow run behind the user rather than dispatching it when the policy asks for approval', function () {
+        mcpShellPolicy(McpPolicy::REQUIRE_APPROVAL);
+        Event::fake([McpActionPendingApproval::class]);
+
+        $workflowPath = '/tmp/repo-feature/.laborforest/workflows/up.yaml';
+
+        $this->mock(ProjectsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadProjectWorkspace')->once()->andReturn(componentWorkspaceData('/tmp/repo-feature'));
+            $mock->shouldReceive('loadProjectFromWorkspace')->once()
+                ->andReturn(componentProjectData('11111111-1111-1111-1111-111111111111', '/tmp/repo'));
+        });
+
+        $this->mock(WorkflowService::class, function (MockInterface $mock) use ($workflowPath) {
+            $mock->shouldReceive('workflowPath')->once()->andReturn($workflowPath);
+            $mock->shouldNotReceive('dispatchWorkflow');
+        });
+
+        mcpWorkflowFileExists($workflowPath);
+
+        LaborForestServer::tool(RunWorkflowTool::class, ['path' => '/tmp/repo-feature', 'workflow' => 'up'])
+            ->assertOk()
+            ->assertSee('pending manual approval in application UI');
+
+        assertApprovalParked(McpActionPendingApprovalType::RUN_WORKFLOW, 'up');
+    });
+
+    it('withholds a workflow run rather than publishing a tool that could only refuse it', function () {
+        mcpShellPolicy(McpPolicy::DENY);
+        Event::fake([McpActionPendingApproval::class]);
+
+        $this->mock(ProjectsService::class)->shouldNotReceive('loadProjectWorkspace');
+        $this->mock(WorkflowService::class)->shouldNotReceive('dispatchWorkflow');
+
+        LaborForestServer::tool(RunWorkflowTool::class, ['path' => '/tmp/repo-feature', 'workflow' => 'up'])
+            ->assertHasErrors(['Tool [run-workflow] not found.']);
+
+        Event::assertNotDispatched(McpActionPendingApproval::class);
+    });
+
+    it('withholds a workflow run when the settings file cannot be read', function () {
+        $this->mock(SettingsService::class)
+            ->shouldReceive('loadSettings')
+            ->andThrow(new InvalidSettingsFile('.laborforest/settings.yaml', ['broken']));
+
+        $this->mock(WorkflowService::class)->shouldNotReceive('dispatchWorkflow');
+
+        LaborForestServer::tool(RunWorkflowTool::class, ['path' => '/tmp/repo-feature', 'workflow' => 'up'])
+            ->assertHasErrors(['Tool [run-workflow] not found.']);
+    });
+
+    it('reports a workflow name matching no file before the shell policy could park it', function () {
+        mcpShellPolicy(McpPolicy::REQUIRE_APPROVAL);
+        Event::fake([McpActionPendingApproval::class]);
+
+        $this->mock(ProjectsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadProjectWorkspace')->once()->andReturn(componentWorkspaceData('/tmp/repo-feature'));
+            $mock->shouldReceive('loadProjectFromWorkspace')->once()
+                ->andReturn(componentProjectData('11111111-1111-1111-1111-111111111111', '/tmp/repo'));
+        });
+
+        $this->mock(WorkflowService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('workflowPath')->once()->with('/tmp/repo-feature', 'down')
+                ->andReturn('/tmp/repo-feature/.laborforest/workflows/down.yaml');
+            $mock->shouldNotReceive('dispatchWorkflow');
+        });
+
+        mcpWorkflowFileExists('/tmp/repo-feature/.laborforest/workflows/up.yaml');
+
+        LaborForestServer::tool(RunWorkflowTool::class, ['path' => '/tmp/repo-feature', 'workflow' => 'down'])
+            ->assertHasErrors(["Workflow 'down' does not exist."]);
+
+        Event::assertNotDispatched(McpActionPendingApproval::class);
     });
 
     it('reports a project it cannot remove', function () {
@@ -1202,10 +1389,30 @@ describe('tools', function () {
         Event::assertDispatched(GlobalRefresh::class);
     });
 
+    it('refuses a launch command whose placeholder is never closed', function () {
+        Event::fake([GlobalRefresh::class]);
+
+        $this->mock(SettingsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadSettings')->andReturn(mcpWritableSettings());
+            $mock->shouldNotReceive('saveSettings');
+        });
+
+        LaborForestServer::tool(UpdateSettingsTool::class, [
+            'command_launch_terminal' => 'open "{{ WORKSPACE_DIR',
+        ])->assertHasErrors(['Unterminated {{ }} placeholder.']);
+
+        Event::assertNotDispatched(GlobalRefresh::class);
+    });
+
     it('refuses a launch command naming a variable it does not recognize', function () {
         Event::fake([GlobalRefresh::class]);
 
-        $this->mock(SettingsService::class)->shouldNotReceive('saveSettings');
+        $this->mock(SettingsService::class, function (MockInterface $mock) {
+            // the registration gates read the settings too, and an unstubbed read would fail
+            // closed and withhold the very tool under test
+            $mock->shouldReceive('loadSettings')->andReturn(mcpWritableSettings());
+            $mock->shouldNotReceive('saveSettings');
+        });
 
         LaborForestServer::tool(UpdateSettingsTool::class, [
             'command_launch_terminal' => 'open "{{ NOPE }}"',
@@ -1214,15 +1421,17 @@ describe('tools', function () {
         Event::assertNotDispatched(GlobalRefresh::class);
     });
 
-    it('reports a settings file it cannot read before updating it', function () {
+    it('withholds the tool entirely when the settings file it would update cannot be read', function () {
+        // read-only fails closed, so a file the app cannot parse leaves nothing published that
+        // could write over it; the settings resource is what still names the problem
         Event::fake([GlobalRefresh::class]);
 
         $this->mock(SettingsService::class)
-            ->shouldReceive('loadSettings')->twice()
+            ->shouldReceive('loadSettings')->once()
             ->andThrow(new InvalidSettingsFile('.laborforest/settings.yaml', ['broken']));
 
         LaborForestServer::tool(UpdateSettingsTool::class, ['dark_mode' => false])
-            ->assertHasErrors(['The settings file [.laborforest/settings.yaml] is invalid: broken']);
+            ->assertHasErrors(['Tool [update-settings] not found.']);
 
         Event::assertNotDispatched(GlobalRefresh::class);
     });
@@ -1619,9 +1828,9 @@ dataset('in flight statuses', [
 ]);
 
 dataset('launch tools', [
-    'ide' => [LaunchIdeTool::class, 'launchIde'],
-    'terminal' => [LaunchTerminalTool::class, 'launchTerminal'],
-    'browser' => [LaunchBrowserTool::class, 'launchBrowser'],
+    'ide' => [LaunchIdeTool::class, 'launchIde', McpActionPendingApprovalType::LAUNCH_IDE],
+    'terminal' => [LaunchTerminalTool::class, 'launchTerminal', McpActionPendingApprovalType::LAUNCH_TERMINAL],
+    'browser' => [LaunchBrowserTool::class, 'launchBrowser', McpActionPendingApprovalType::LAUNCH_BROWSER],
 ]);
 
 /**
@@ -1676,16 +1885,44 @@ function mcpWorkspaceIsResolved(WorkspaceStatus $status = WorkspaceStatus::READY
 }
 
 /**
- * Settings with MCP in the writable mode a mutating tool needs to be registered at all.
+ * Settings with MCP in the writable mode a mutating tool needs to be registered at all, and the
+ * shell policy a tool that spawns a command needs to be registered *and* to run it rather than
+ * park it for approval — both gates are answered before a tool is published, so either default
+ * leaves the tool missing rather than refusing.
  *
- * Read-only is the default a fresh settings file carries, so a test exercising a write tool has to
- * say so rather than inherit it.
+ * Read-only and a denied shell policy are the defaults a fresh settings file carries, so a test
+ * exercising a write tool has to say so rather than inherit them.
  */
 function mcpWritableSettings(?SettingsData $settings = null): SettingsData
 {
     $settings ??= SettingsData::defaults();
 
     $settings->mcp_read_only = false;
+    $settings->mcp_shell_policy = McpPolicy::ALLOW;
 
     return $settings;
+}
+
+/**
+ * Rewrite the settings file with a shell command execution policy, leaving MCP writable.
+ */
+function mcpShellPolicy(McpPolicy $policy): void
+{
+    Storage::disk(Disk::USER_HOME->value)->put('.laborforest/settings.yaml', settingsYaml([
+        'mcp_read_only' => false,
+        'mcp_shell_policy' => $policy->value,
+    ]));
+}
+
+/**
+ * Assert the one parked approval carries the action a tool declined to run itself.
+ */
+function assertApprovalParked(McpActionPendingApprovalType $type, ?string $workflowName = null): void
+{
+    Event::assertDispatched(
+        McpActionPendingApproval::class,
+        fn (McpActionPendingApproval $event) => $event->workspacePath === '/tmp/repo-feature'
+            && $event->type === $type->value
+            && $event->workflowName === $workflowName
+    );
 }

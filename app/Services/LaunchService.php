@@ -16,10 +16,7 @@ class LaunchService
         $this->launch(
             projectData: $projectData,
             workspaceData: $workspaceData,
-            command: $this->resolveCommand(
-                $projectData->command_launch_terminal,
-                fn (SettingsData $settingsData) => $settingsData->command_launch_terminal,
-            ),
+            command: $this->getTerminalCommand($projectData),
         );
     }
 
@@ -28,10 +25,7 @@ class LaunchService
         $this->launch(
             projectData: $projectData,
             workspaceData: $workspaceData,
-            command: $this->resolveCommand(
-                $projectData->command_launch_ide,
-                fn (SettingsData $settingsData) => $settingsData->command_launch_ide,
-            ),
+            command: $this->getIdeCommand($projectData),
         );
     }
 
@@ -40,10 +34,7 @@ class LaunchService
         $this->launch(
             projectData: $projectData,
             workspaceData: $workspaceData,
-            command: $this->resolveCommand(
-                $projectData->command_launch_browser,
-                fn (SettingsData $settingsData) => $settingsData->command_launch_browser,
-            ),
+            command: $this->getBrowserCommand($projectData),
         );
     }
 
@@ -72,13 +63,46 @@ class LaunchService
         }
 
         $this->launchProcess(
-            command: app(VariableReplacementService::class)->replace(
-                projectData: $projectData,
-                workspaceData: $workspaceData,
-                content: $command,
-            ),
+            command: $this->getRawCommand($projectData, $workspaceData, $command),
             cwd: $workspaceData->path,
         )->start();
+    }
+
+    public function getBrowserCommand(ProjectData $projectData): ?string
+    {
+        return $this->resolveCommand(
+            $projectData->command_launch_browser,
+            fn (SettingsData $settingsData) => $settingsData->command_launch_browser,
+        );
+    }
+
+    public function getIdeCommand(ProjectData $projectData): ?string
+    {
+        return $this->resolveCommand(
+            $projectData->command_launch_ide,
+            fn (SettingsData $settingsData) => $settingsData->command_launch_ide,
+        );
+    }
+
+    public function getTerminalCommand(ProjectData $projectData): ?string
+    {
+        return $this->resolveCommand(
+            $projectData->command_launch_terminal,
+            fn (SettingsData $settingsData) => $settingsData->command_launch_terminal,
+        );
+    }
+
+    public function getRawCommand(ProjectData $projectData, WorkspaceData $workspaceData, ?string $command): ?string
+    {
+        if (! $command) {
+            return null;
+        }
+
+        return app(VariableReplacementService::class)->replace(
+            projectData: $projectData,
+            workspaceData: $workspaceData,
+            content: $command,
+        );
     }
 
     /**

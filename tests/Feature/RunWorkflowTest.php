@@ -12,6 +12,9 @@ use App\Enums\WorkflowStepSkipReason;
 use App\Enums\WorkflowStepStatus;
 use App\Enums\WorkflowStepType;
 use App\Enums\WorkspaceStatus;
+use App\Events\ProjectDataUpdated;
+use App\Events\WorkflowFinished;
+use App\Exceptions\UnresolvedVariable;
 use App\Jobs\RunWorkflow;
 use App\Services\ProcessEnvironmentService;
 use App\Services\ProjectsService;
@@ -19,11 +22,15 @@ use App\Services\WorkflowService;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 use Mockery\MockInterface;
 use Symfony\Component\Process\Exception\ProcessTimedOutException as SymfonyProcessTimedOutException;
 use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\Fakes\FakeProcessEnvironmentService;
+use Tests\Fakes\ProcessSpy;
 
 describe('pendingProcess', function () {
     it('gives every process it builds the configured budget', function () {
@@ -199,10 +206,10 @@ describe('gates', function () {
         });
 
         // runSteps() reads the run log the job has already written, so the fixture stands in for it
-        $this->runGatedSteps = function (array $steps): array {
+        $this->runGatedSteps = function (array $steps, ?array $stepHashes = null): array {
             $workflow = componentWorkflowData($steps);
 
-            $job = exposedRunWorkflow(45, stepHashes: $workflow->stepHashes());
+            $job = exposedRunWorkflow(45, stepHashes: $stepHashes ?? $workflow->stepHashes());
             $job->logFilePath = $this->workspacePath.'/.laborforest/ignored/logs/deploy.yaml';
             $job->workflowRunLogData = componentRunLogData(
                 id: 'deploy-log',
@@ -326,6 +333,193 @@ describe('gates', function () {
         // markUnreachedStepsAborted() runs from handle(), so stand in for it the way handle() would
         expect($run['steps']->last()->isPending())->toBeTrue()
             ->and($run['steps']->first()->isPending())->toBeFalse();
+    });
+    it('leaves a step the run was not asked for untouched', function () {
+        // the UI lets a run be started from a subset of a workflow's steps; a step whose hash is
+        // absent from that selection never spawns anything and keeps its pending exit code
+        Process::fake(['*' => Process::result('done')]);
+
+        $steps = [
+            componentStepData(name: 'Skipped', run: 'composer install'),
+            componentStepData(name: 'Selected', run: 'php artisan migrate'),
+        ];
+
+        $selected = componentWorkflowData($steps)->stepHashes();
+        array_shift($selected);
+
+        $run = ($this->runGatedSteps)($steps, $selected);
+
+        expect($run['successful'])->toBeTrue()
+            ->and($run['steps']->first()->exitCode)->toBeNull()
+            ->and($run['steps']->first()->skip_reason)->toBe(WorkflowStepSkipReason::NOT_SELECTED)
+            ->and($run['steps']->last()->exitCode)->toBe(0);
+
+        Process::assertRanTimes(fn (PendingProcess $process) => str_contains((string) $process->command, 'composer install'), 0);
+    });
+
+    it('hands the shell a strict wrapper, the resolved command and the workspace directory', function () {
+        // every other shell test asserts only an exit code, so nothing else covers what is actually
+        // spawned: the strict-mode prefix, the replaced {{ }} tags, the cwd and the step's own env
+        $process = ProcessSpy::install();
+        $process->responses = [['ok' => true, 'out' => 'done']];
+
+        $run = ($this->runGatedSteps)([
+            componentStepData(
+                name: 'Build',
+                run: 'echo {{ WORKSPACE_SLUG_KEBAB }} | tee build.log',
+                env: ['NODE_ENV' => 'production'],
+            ),
+        ]);
+
+        [$command, $cwd] = $process->commands[0];
+
+        expect($run['successful'])->toBeTrue()
+            ->and($command)->toStartWith('set -eu; set -o pipefail')
+            ->and($command)->toContain('echo repo-feature | tee build.log')
+            ->and($command)->not->toContain('{{ WORKSPACE_SLUG_KEBAB }}')
+            ->and($cwd)->toBe($this->workspacePath);
+    });
+});
+
+describe('update_env step', function () {
+    beforeEach(function () {
+        $this->envWorkspacePath = sys_get_temp_dir().DIRECTORY_SEPARATOR.'lf-update-env-'.Str::random(8);
+        File::ensureDirectoryExists($this->envWorkspacePath);
+
+        $this->envPath = $this->envWorkspacePath.DIRECTORY_SEPARATOR.'.env';
+
+        $this->instance(ProcessEnvironmentService::class, new FakeProcessEnvironmentService);
+
+        $this->mock(WorkflowService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('writeWorkflowLogData');
+        });
+
+        // the branch reads and writes the workspace's own .env, so this run needs a real directory
+        $this->runEnvSteps = function (array $steps) {
+            $project = componentProjectData('11111111-1111-1111-1111-111111111111', '/tmp/repo');
+            $workspace = componentWorkspaceData($this->envWorkspacePath);
+            $workflow = componentWorkflowData($steps);
+
+            $job = exposedRunWorkflow(45, stepHashes: $workflow->stepHashes());
+            $job->logFilePath = $this->envWorkspacePath.'/.laborforest/ignored/logs/deploy.yaml';
+            $job->workflowRunLogData = componentRunLogData(
+                id: 'deploy-log',
+                name: 'deploy',
+                steps: $workflow->steps
+                    ->values()
+                    ->map(fn (WorkflowStepData $step, int $index) => componentRunLogStepData(
+                        name: $step->name,
+                        exitCode: null,
+                        output: '',
+                        hash: $step->hash((string) $index),
+                        run: $step->run,
+                    ))
+                    ->all(),
+            );
+
+            return [
+                'successful' => $job->steps($workflow, $project, $workspace),
+                'steps' => $job->workflowRunLogData->steps,
+            ];
+        };
+    });
+
+    afterEach(function () {
+        File::deleteDirectory($this->envWorkspacePath);
+    });
+
+    it('writes the keys into an .env file it creates when the workspace has none', function () {
+        $run = ($this->runEnvSteps)([
+            componentStepData(
+                name: 'Update .env file',
+                run: null,
+                type: WorkflowStepType::UPDATE_ENV,
+                map: ['APP_URL' => 'https://{{ WORKSPACE_SLUG_KEBAB }}.test'],
+            ),
+        ]);
+
+        $slug = componentWorkspaceData($this->envWorkspacePath)->slugKebab();
+
+        expect($run['successful'])->toBeTrue()
+            ->and($run['steps']->first()->exitCode)->toBe(0)
+            ->and(File::get($this->envPath))->toBe('APP_URL=https://'.$slug.'.test'.PHP_EOL);
+    });
+
+    it('rewrites a key it already holds and appends one it does not', function () {
+        File::put($this->envPath, "APP_NAME=Example\nAPP_URL=https://old.test\n");
+
+        ($this->runEnvSteps)([
+            componentStepData(
+                name: 'Update .env file',
+                run: null,
+                type: WorkflowStepType::UPDATE_ENV,
+                map: ['APP_URL' => 'https://new.test', 'DB_DATABASE' => 'repo_feature'],
+            ),
+        ]);
+
+        expect(File::get($this->envPath))
+            ->toBe("APP_NAME=Example\nAPP_URL=https://new.test\nDB_DATABASE=repo_feature\n");
+    });
+
+    it('quotes a value a .env parser would otherwise misread', function () {
+        ($this->runEnvSteps)([
+            componentStepData(
+                name: 'Update .env file',
+                run: null,
+                type: WorkflowStepType::UPDATE_ENV,
+                map: ['APP_NAME' => 'My App'],
+            ),
+        ]);
+
+        expect(File::get($this->envPath))->toBe('APP_NAME="My App"'.PHP_EOL);
+    });
+
+    it('lets a value naming an unresolvable variable escape the run', function () {
+        // unlike a shell step, whose failure is recorded and ends the run, an unresolvable tag in
+        // an update_env value throws past the step loop and is answered by failed()
+        expect(fn () => ($this->runEnvSteps)([
+            componentStepData(
+                name: 'Update .env file',
+                run: null,
+                type: WorkflowStepType::UPDATE_ENV,
+                map: ['APP_URL' => '{{ ENV_NOPE }}'],
+            ),
+        ]))->toThrow(UnresolvedVariable::class);
+
+        expect(File::exists($this->envPath))->toBeTrue();
+    });
+});
+
+describe('failed', function () {
+    it('leaves the workspace in error and tells the app the run is over', function () {
+        Event::fake([WorkflowFinished::class, ProjectDataUpdated::class]);
+
+        $project = componentProjectData('11111111-1111-1111-1111-111111111111', '/tmp/repo');
+
+        $this->mock(ProjectsService::class, function (MockInterface $mock) use ($project) {
+            $mock->shouldReceive('loadProject')->once()->andReturn($project);
+            $mock->shouldReceive('loadProjectWorkspace')->once()->with('/tmp/repo-feature')
+                ->andReturn(componentWorkspaceData('/tmp/repo-feature'));
+            $mock->shouldReceive('updateProjectWorkspaceStatus')->once()
+                ->with('/tmp/repo-feature', WorkspaceStatus::ERROR);
+        });
+
+        exposedRunWorkflow(45)->failed(new RuntimeException('worker died'));
+
+        Event::assertDispatched(WorkflowFinished::class, fn (WorkflowFinished $event) => $event->status === WorkflowStatus::FAILED->value
+            && $event->workflowName === 'deploy');
+        Event::assertDispatched(ProjectDataUpdated::class);
+    });
+
+    it('swallows a failure to record the failure, rather than looping the queue', function () {
+        // the handler runs while the job is already dying; throwing here would fail the failure
+        $this->mock(ProjectsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadProject')->once()->andThrow(new RuntimeException('projects file unreadable'));
+            $mock->shouldNotReceive('updateProjectWorkspaceStatus');
+        });
+
+        expect(fn () => exposedRunWorkflow(45)->failed(new RuntimeException('worker died')))
+            ->not->toThrow(Throwable::class);
     });
 });
 

@@ -257,6 +257,89 @@ describe('launchBrowser', function () {
     ]);
 });
 
+describe('command getters', function () {
+    it('returns the command the project defines', function (string $method, string $projectArgument) {
+        $project = launchProjectData(...[$projectArgument => 'project-command "{{ WORKSPACE_DIR }}"']);
+
+        expect($this->launcher->{$method}($project))->toBe('project-command "{{ WORKSPACE_DIR }}"')
+            ->and($this->settings->loads)->toBe(0);
+    })->with('launch command getters');
+
+    it('falls back to the settings command when the project defines none', function (string $method, string $projectArgument, string $settingsCommand) {
+        expect($this->launcher->{$method}($this->project))->toBe($settingsCommand)
+            ->and($this->settings->loads)->toBe(1);
+    })->with('launch command getters');
+
+    it('falls back to the settings command when the project command was cleared', function (string $method, string $projectArgument, string $settingsCommand) {
+        $project = launchProjectData(...[$projectArgument => '']);
+
+        expect($this->launcher->{$method}($project))->toBe($settingsCommand)
+            ->and($this->settings->loads)->toBe(1);
+    })->with('launch command getters');
+
+    it('returns null when neither the project nor the settings define a command', function (string $method) {
+        $this->settings->settings = new SettingsData;
+
+        expect($this->launcher->{$method}($this->project))->toBeNull();
+    })->with('launch command getters');
+
+    it('throws when the settings file it would fall back to is invalid', function (string $method) {
+        $this->settings->failure = InvalidSettingsFile::withProblems(
+            '.laborforest/settings.yaml',
+            ['Expected a mapping, found string.'],
+        );
+
+        expect(fn () => $this->launcher->{$method}($this->project))
+            ->toThrow(InvalidSettingsFile::class, 'The settings file [.laborforest/settings.yaml] is invalid: Expected a mapping, found string.');
+    })->with('launch command getters');
+});
+
+/**
+ * The command the approval modal shows the user, which is the command as it will run rather than the
+ * template it was authored as.
+ */
+describe('getRawCommand', function () {
+    it('expands every placeholder in the command', function () {
+        $raw = $this->launcher->getRawCommand(
+            $this->project,
+            $this->workspace,
+            'ide "{{ PROJECT_PRIMARY_DIR }}" "{{ WORKSPACE_DIR }}" {{ WORKSPACE_SLUG_SNAKE }} {{ PROJECT_SLUG_KEBAB }}',
+        );
+
+        expect($raw)->toBe('ide "/tmp/repo" "/tmp/repo-feature" repo_feature repo');
+    });
+
+    // launch() short-circuits on a falsy command before it reaches here, so nothing else covers this
+    it('returns null without asking for a replacement when there is no command', function (?string $command) {
+        expect($this->launcher->getRawCommand($this->project, $this->workspace, $command))->toBeNull()
+            ->and($this->variables->replacements)->toBe([]);
+    })->with([
+        'null' => [null],
+        'an empty string' => [''],
+        'the string zero' => ['0'],
+    ]);
+
+    it('throws when the command references an unknown variable', function () {
+        expect(fn () => $this->launcher->getRawCommand($this->project, $this->workspace, 'ide "{{ NOPE }}"'))
+            ->toThrow(UnresolvedVariable::class, 'Unknown variable {{ NOPE }}.');
+    });
+
+    it('throws when the command references an environment variable the workspace does not define', function () {
+        expect(fn () => $this->launcher->getRawCommand($this->project, $this->workspace, 'ide "{{ ENV_APP_URL }}"'))
+            ->toThrow(UnresolvedVariable::class, "Environment variable 'APP_URL' not found in '/tmp/repo-feature/.env'.");
+    });
+});
+
+/**
+ * Every launch command getter, as [method, the launchProjectData() argument that overrides it, the
+ * command the shared settings fixture holds for it].
+ */
+dataset('launch command getters', [
+    'terminal' => ['getTerminalCommand', 'terminal', 'settings-terminal "{{ WORKSPACE_DIR }}"'],
+    'ide' => ['getIdeCommand', 'ide', 'settings-ide "{{ WORKSPACE_DIR }}"'],
+    'browser' => ['getBrowserCommand', 'browser', 'settings-browser "{{ WORKSPACE_DIR }}"'],
+]);
+
 describe('process configuration', function () {
     it('starts the launch detached, in the workspace, without this application\'s environment', function () {
         $pending = (new ExposedLaunchService)->pendingLaunchProcess('ide "/tmp/repo-feature"', $this->worktree);

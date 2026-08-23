@@ -45,7 +45,7 @@ class OverrideWorkspaceStatusTool extends Tool
         // overwritten moments later; worse, a workspace forced to ready mid-run accepts a second
         // concurrent run against the same worktree
         if ($workspace->status->hasRunInFlight()) {
-            return Response::error("Workspace at path '{$workspace->path}' has a workflow run in flight and is '{$workspace->status->value}'. Override the status from the app once the run has finished.");
+            return Response::error("Workspace at path '{$workspace->path}' has a workflow run in flight and is '{$workspace->status->value}'. Override the status from the app once the run has finished.")->asAssistant();
         }
 
         try {
@@ -54,7 +54,7 @@ class OverrideWorkspaceStatusTool extends Tool
                 WorkspaceStatus::from($request->get('status')),
             );
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         broadcast(new GlobalRefresh);

@@ -46,7 +46,7 @@ class AddWorkspaceTool extends Tool
         try {
             $branchExists = app(GitService::class)->doesBranchExist($project->path, $validated['branch']);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         if (! $branchExists) {
@@ -62,7 +62,7 @@ class AddWorkspaceTool extends Tool
                 $validated['base_branch'] ?? null,
             );
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         broadcast(new GlobalRefresh);

@@ -48,7 +48,7 @@ class ValidateWorkflowTool extends Tool
         // reported before the file is loaded, so a name that matches nothing reads as a missing
         // workflow rather than as a parse failure, exactly as run-workflow reports it
         if (! File::isFile($workflowPath)) {
-            return Response::error("Workflow '{$workflowName}' does not exist.");
+            return Response::error("Workflow '{$workflowName}' does not exist.")->asAssistant();
         }
 
         /**
@@ -61,7 +61,7 @@ class ValidateWorkflowTool extends Tool
         try {
             $workflow = $workflowService->loadWorkflow($workflowPath);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         return $this->json([

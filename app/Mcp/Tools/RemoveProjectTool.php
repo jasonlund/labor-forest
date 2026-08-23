@@ -36,7 +36,7 @@ class RemoveProjectTool extends Tool
                 $request->boolean('remove_worktrees'),
             );
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         broadcast(new GlobalRefresh);

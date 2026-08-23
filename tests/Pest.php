@@ -178,17 +178,21 @@ function componentWorkflowData(
  */
 function componentStepData(
     string $name = 'Install dependencies',
-    string $run = 'composer install',
+    ?string $run = 'composer install',
     WorkflowStepType $type = WorkflowStepType::SHELL,
     ?string $if = null,
     ?string $unless = null,
+    ?array $env = null,
+    ?array $map = null,
 ): WorkflowStepData {
     return new WorkflowStepData(
         name: $name,
         type: $type,
+        env: $env,
         if: $if,
         unless: $unless,
         run: $run,
+        map: $map,
     );
 }
 

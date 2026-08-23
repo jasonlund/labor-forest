@@ -19,7 +19,7 @@ There is no uninstall command. To remove the CLI tools, delete the symlink yours
 ## Using the CLI tools
 ![LaborForest - CLI Tools Help](images/cli-tools-help.png)
 
-Run `lf add-project` to add the current working directory as a Project in LaborForest. The directory must be a git repository with a clean git status, and it must not already be registered, the same requirements the `Add project` button enforces.
+Run `lf add-project` to add the current working directory as a Project in LaborForest. The directory must be a git repository with a clean git status, and it must not already be registered, the same requirements the `Add project` button enforces. The Project is opened on arrival, but the prompt offering to commit or exclude the new `.laborforest` directory is not shown — that belongs to the `Add project` button alone, so a Project added this way leaves the directory for you to commit or exclude yourself.
 
 Run `lf run <workflow>` to trigger the run of a Workflow in LaborForest using the current Workspace directory. The current directory must be the root of a Workspace, and that Workspace must belong to a registered Project. Running from a subdirectory does not work. The script checks that `.laborforest/workflows/<workflow>.yaml` or `.yml` exists before waking the app, and exits with an error if neither does. A run started this way runs every step of the Workflow, and it is subject to the same status rules as a run started from the UI.
 

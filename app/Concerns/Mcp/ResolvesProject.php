@@ -35,7 +35,7 @@ trait ResolvesProject
                     ->firstWhere(fn (ProjectData $data) => $data->path === $path);
 
                 if (! $project) {
-                    return Response::error('Failed to find project.');
+                    return Response::error('Failed to find project.')->asAssistant();
                 }
 
                 return $project;
@@ -43,7 +43,7 @@ trait ResolvesProject
 
             return $projectsService->loadProject($uuid);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
     }
 }

@@ -73,7 +73,7 @@ class UpdateProjectLaunchCommandsTool extends Tool
         try {
             app(ProjectsService::class)->updateProject($project);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         broadcast(new GlobalRefresh);

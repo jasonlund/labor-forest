@@ -26,11 +26,11 @@ trait ResolvesWorkspace
             $workspace = $projectsService->loadProjectWorkspace($path);
             $project = $projectsService->loadProjectFromWorkspace($workspace->path);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         if (! $project) {
-            return Response::error('Failed to find workspace project.');
+            return Response::error('Failed to find workspace project.')->asAssistant();
         }
 
         return [$project, $workspace];

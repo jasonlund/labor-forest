@@ -48,7 +48,7 @@ class AddWorkspaceExampleWorkflowsTool extends Tool
         try {
             app(ProjectsService::class)->initializeWorkspaceStarterWorkflows($validated['path'], $exampleWorkflows[$validated['example']]);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         broadcast(new GlobalRefresh);

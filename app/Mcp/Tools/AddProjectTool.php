@@ -34,7 +34,7 @@ class AddProjectTool extends Tool
         try {
             $project = app(ProjectsService::class)->addProject($path);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         broadcast(new GlobalRefresh);

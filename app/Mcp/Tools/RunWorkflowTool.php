@@ -2,8 +2,9 @@
 
 namespace App\Mcp\Tools;
 
-use App\Concerns\Mcp\RegistersWhenWritable;
+use App\Concerns\Mcp\IsShellCommandExecutionTool;
 use App\Concerns\Mcp\ResolvesWorkspace;
+use App\Enums\McpActionPendingApprovalType;
 use App\Events\GlobalRefresh;
 use App\Services\SettingsService;
 use App\Services\WorkflowService;
@@ -26,7 +27,7 @@ use Throwable;
 #[Description('Dispatch a local workflow to run within a workspace by path. Every step of the workflow runs. Returns the unique workflow ID on success.')]
 class RunWorkflowTool extends Tool
 {
-    use RegistersWhenWritable;
+    use IsShellCommandExecutionTool;
     use ResolvesWorkspace;
 
     /**
@@ -46,27 +47,35 @@ class RunWorkflowTool extends Tool
         $workflowService = app(WorkflowService::class);
 
         // reported before the file is loaded, so a name that matches nothing reads as a missing
-        // workflow rather than as a parse failure
+        // workflow rather than as a parse failure — and is not parked for an approval that could
+        // only ever fail
         if (! File::isFile($workflowService->workflowPath($workspace->path, $workflowName))) {
-            return Response::error("Workflow '{$workflowName}' does not exist.");
+            return Response::error("Workflow '{$workflowName}' does not exist.")->asAssistant();
         }
 
         try {
-            $workflowRunLogId = $workflowService->dispatchWorkflow(
-                projectUuid: $project->uuid,
+            return $this->executeShellCommandTool(
+                whenAllowed: function () use ($project, $workspace, $workflowName, $workflowService): Response {
+                    $workflowRunLogId = $workflowService->dispatchWorkflow(
+                        projectUuid: $project->uuid,
+                        workspacePath: $workspace->path,
+                        workflowName: $workflowName,
+                        stepHashes: null,
+                        parentLogId: null,
+                        timeoutSeconds: app(SettingsService::class)->loadSettings()->workflow_step_timeout_seconds,
+                    );
+
+                    broadcast(new GlobalRefresh);
+
+                    return Response::text($workflowRunLogId)->asAssistant();
+                },
                 workspacePath: $workspace->path,
+                type: McpActionPendingApprovalType::RUN_WORKFLOW,
                 workflowName: $workflowName,
-                stepHashes: null,
-                parentLogId: null,
-                timeoutSeconds: app(SettingsService::class)->loadSettings()->workflow_step_timeout_seconds,
             );
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
-
-        broadcast(new GlobalRefresh);
-
-        return Response::text($workflowRunLogId)->asAssistant();
     }
 
     /**

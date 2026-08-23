@@ -41,9 +41,11 @@ copies. It is not CI, and it is not a way to manage agents.
 
 - **Project** — a local git repository registered with LaborForest, identified by its absolute `path` or
   by its `uuid`. A repository on disk is not a Project until `add-project` registers it.
-- **Workspace** — a git worktree of a Project, coupled to a branch, identified by its absolute path. Any
-  directory other than the `$HOME` directory that contains a `.laborforest` directory is a Workspace,
-  including the Project's own primary directory.
+- **Workspace** — a git worktree of a Project, coupled to a branch, identified by the absolute path of
+  the worktree's own root directory rather than of a directory inside it, and including the Project's
+  primary directory. LaborForest keeps a Workspace's own files in a `.laborforest` directory inside it,
+  but that directory is not what makes one: a path is a Workspace here only if it is a worktree of a
+  registered Project, which is what every tool taking a `path` resolves it against.
 - **Workflow** — a YAML file the user writes, stored at `.laborforest/workflows/<name>.yaml` inside the
   Workspace it runs against. Always addressed by name with no extension, so `up` means `up.yaml`, and
   a `.yml` file is read just the same. Its steps run sequentially in the Workspace directory and are
@@ -62,7 +64,8 @@ copies. It is not CI, and it is not a way to manage agents.
   `{{ ENV_APP_URL }}` reads `APP_URL` from the Workspace's own `.env` — which works everywhere the
   listed variables do but is deliberately absent from that list.
 - Read `laborforest://workflow-schema` before writing or editing any workflow file. No tool here
-  writes one, and several of the grammar's rules are not guessable from an example.
+  authors one — `add-workspace-example-workflows` only copies a fixed starter set — and several of
+  the grammar's rules are not guessable from an example.
 - Order matters. A Project must be registered before `add-workspace` will accept it, and a Workspace must
   exist before workflows can be seeded into it or run in it.
 
@@ -90,9 +93,11 @@ copies. It is not CI, and it is not a way to manage agents.
 
 ## Authoring workflows
 
-Workflow files are written by hand, by the user or by you. There is no tool that creates or edits
-one, so the file itself is written with whatever file tools the client has, against the grammar in
-`laborforest://workflow-schema`, and then checked with `validate-workflow`.
+Workflow files are written by hand, by the user or by you. No tool here authors or edits one — the
+only tool that writes a workflow file at all is `add-workspace-example-workflows`, which copies a
+fixed starter set into a workspace that has none. Anything else is written with whatever file tools
+the client has, against the grammar in `laborforest://workflow-schema`, and then checked with
+`validate-workflow`.
 
 Three prompts cover the jobs that take more than a tool call: `author-workflow` writes one workflow
 from a description of what it should do, `convert-setup-to-workflow` turns a project's existing setup
@@ -113,18 +118,29 @@ reproduces the failure.
 
 - Every tool acts on this machine as the logged-in user, with that user's shell and git credentials.
   Tools create and delete directories, remove worktrees, and run whatever shell commands the user's
-  workflows contain. **Nothing on the LaborForest side asks the user to confirm a tool call.** Confirm
-  `remove-project`, `run-workflow` and `purge-workflow-logs` with the user before calling them.
+  workflows contain. Only the four tools that spawn a shell — `run-workflow`, `launch-terminal`,
+  `launch-ide` and `launch-browser` — are gated on the LaborForest side;
+  **nothing else here asks the user to confirm a tool call.**
+  Confirm `remove-project`, `run-workflow` and `purge-workflow-logs` with the user before calling them.
+- Those four obey the user's shell command execution policy. Under `allow` they run as called. Under
+  `require-approval` the call changes nothing and answers `pending manual approval in application UI`:
+  LaborForest shows the user the workflow or the command and waits, so treat the work as neither done
+  nor refused, tell the user to approve it in the app, and do not call the tool again to retry. Under
+  `deny` those four are not published at all, exactly as in read-only mode below — a workflow cannot
+  be run and nothing can be launched from here until the user changes the policy on the Settings
+  screen.
 - The server is local only, bound to `127.0.0.1`, requires the bearer token the user copied out of the
   Settings screen, and runs only while the LaborForest app is open. A connection that stops answering
   usually means the app was quit or MCP was switched off; one that starts refusing usually means the
   token was regenerated.
 - The user can put the server in read-only mode, in which only `find-project-by-path` and
-  `validate-workflow` are published. A tool named here that is missing from the tool list is not a bug
-  to work around: say so, and send the user to the Settings screen.
-- `update-settings` cannot change `mcp_enabled`, `mcp_port`, `mcp_read_only` or the token. The server
-  will not move, unlock or switch itself off underneath its own client; send the user to the app's
-  Settings screen for those.
+  `validate-workflow` are published. A settings file LaborForest cannot read is answered the same
+  way, as is a `deny` shell policy for the four tools above. A tool named here that is missing from
+  the tool list is not a bug to work around, and no other tool substitutes for it: say which tool is
+  missing, and send the user to the Settings screen.
+- `update-settings` cannot change `mcp_enabled`, `mcp_port`, `mcp_read_only`, `mcp_shell_policy` or the
+  token. The server will not move, unlock or switch itself off underneath its own client, and will not
+  loosen its own shell gate; send the user to the app's Settings screen for those.
 - For the three launch commands, in both `update-settings` and `update-project-launch-commands`: omitting
   a field or passing `null` keeps the stored value, a string sets it, and an empty string clears it. A
   Project's override wins over the global command, and clearing an override falls back to the global one.

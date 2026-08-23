@@ -75,7 +75,7 @@ class UpdateSettingsTool extends Tool
 
             $settingsService->saveSettings($settings);
         } catch (Throwable $th) {
-            return Response::error($th->getMessage());
+            return Response::error($th->getMessage())->asAssistant();
         }
 
         broadcast(new GlobalRefresh);
