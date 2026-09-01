@@ -44,6 +44,12 @@ The window is the only thing the `lf` script and the MCP server can report with 
 
 An `lf` command that starts LaborForest in headless mode leaves it running with no window at all. Click its Dock icon to get one — macOS asks the app to open a window when you click the icon of an application that has none showing, and a click is not a CLI request, so a window is what you get.
 
+### A refresh never pulls the window forward
+
+When something outside the window changes the app — an MCP tool adding a Project, starting a Workflow, clearing a status — the page reloads so you are not left looking at the state from before. If the window is in front, it reloads right away, as it always has. If it is not, the reload waits until you next click into the window and happens then, so you come back to a page that is up to date rather than being pulled to one.
+
+This does not depend on headless mode being on. A window in the background never needs to be current this instant, so interrupting you for it is never what you wanted. Deliberate raises are untouched: `lf validate`, a failed command, an approval prompt and a cold launch all still come forward.
+
 ### Headless mode and `Require approval` do not go together
 
 The approval prompt is not suppressed by headless mode — nothing in it checks the setting. But it can only appear inside an open window, and headless mode is the one thing that routinely leaves LaborForest running without one.

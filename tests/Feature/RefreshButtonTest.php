@@ -19,15 +19,21 @@ describe('flushCache', function () {
 });
 
 describe('globalRefresh', function () {
-    it('empties the cache and reloads the page when the broadcast arrives', function () {
+    it('reloads only once the window has focus when the broadcast arrives', function () {
+        Livewire::test(RefreshButton::class)
+            ->dispatch('native:'.GlobalRefresh::class)
+            ->assertOk()
+            ->assertJs("const reload = () => \$wire.flushCache().then(() => window.location.reload()); if (document.hasFocus()) { reload() } else if (! window.__lfPendingRefresh) { window.__lfPendingRefresh = true; window.addEventListener('focus', reload, { once: true }) }");
+    });
+
+    it('leaves the cache alone until the browser asks for the flush', function () {
         Cache::put('anything', 'from before the refresh');
 
         Livewire::test(RefreshButton::class)
             ->dispatch('native:'.GlobalRefresh::class)
-            ->assertOk()
-            ->assertJs('window.location.reload()');
+            ->assertOk();
 
-        expect(Cache::has('anything'))->toBeFalse();
+        expect(Cache::has('anything'))->toBeTrue();
     });
 });
 
