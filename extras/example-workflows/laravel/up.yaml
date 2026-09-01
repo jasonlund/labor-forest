@@ -13,6 +13,7 @@ steps:
     map:
       APP_URL: 'https://{{ WORKSPACE_SLUG_KEBAB }}.test'
       AWS_BUCKET: '{{ WORKSPACE_SLUG_KEBAB }}'
+      AWS_URL: 'http://localhost:9000/{{ WORKSPACE_SLUG_KEBAB }}'
       DB_DATABASE: '{{ WORKSPACE_SLUG_SNAKE }}'
       REDIS_PREFIX: '{{ WORKSPACE_SLUG_KEBAB }}-database-'
   - name: 'Create S3 bucket'
