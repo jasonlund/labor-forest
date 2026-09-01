@@ -50,6 +50,8 @@ What it shows is the command as it will run, not as it was written. Every `{{ }}
 
 Only one parked action is held at a time. A second tool call while a modal is waiting replaces the first, so an approval you have not answered is discarded rather than queued behind the new one.
 
+[Headless mode](settings.md#headless-mode) does not suppress any of this. The agent is answered when the action is parked and hears nothing more, so an approval prompt you never see is an agent that waits forever. If you do not want to be interrupted, choose `Allow` or `Deny` instead.
+
 A parked action carries no reservation. `run-workflow` parks before the Workspace status gate is evaluated, so a run can be parked against a Workspace that would refuse it, and a Workspace's status can change while a modal waits. The gate is enforced when you approve, which is also when a launch command with an unresolvable variable fails. Either failure arrives as a red notification in the app, naming the reason, and nothing is dispatched.
 
 Nothing expires. A modal waits until it is answered or replaced, and quitting LaborForest discards it.

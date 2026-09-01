@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Concerns\Services\ManagesFiles;
 use App\Concerns\Services\ResolvesWorkflowFiles;
 use App\Data\PendingCliCommandData;
+use App\Data\PendingCliCommandResultData;
 use App\Enums\CliCommand;
 use App\Enums\Directory;
 use App\Enums\Disk;
@@ -73,7 +74,7 @@ class CliToolsService
      * the message rather than as an exception, because both callers can only respond by showing
      * the user a page.
      */
-    public function runPendingCommand(): ?string
+    public function runPendingCommand(): ?PendingCliCommandResultData
     {
         $pending = $this->pullPendingCommand();
 
@@ -88,44 +89,47 @@ class CliToolsService
                 CliCommand::VALIDATE_WORKFLOW => $this->validateWorkflow($pending),
             };
         } catch (Throwable $th) {
-            return $this->dashboardUrl($th->getMessage());
+            return $this->failure($th->getMessage());
         }
     }
 
     /**
      * @throws Throwable
      */
-    private function addProject(PendingCliCommandData $pending): string
+    private function addProject(PendingCliCommandData $pending): PendingCliCommandResultData
     {
         if (! \Illuminate\Support\Facades\File::isDirectory($pending->path)) {
-            return $this->dashboardUrl('Path does not exist.');
+            return $this->failure('Path does not exist.');
         }
 
         $projectData = app(ProjectsService::class)->addProject($pending->path);
 
-        return Project::getUrl(['uuid' => $projectData->uuid]);
+        return new PendingCliCommandResultData(
+            url: Project::getUrl(['uuid' => $projectData->uuid]),
+            reportsToWindow: false,
+        );
     }
 
     /**
      * @throws Throwable
      */
-    private function runWorkflow(PendingCliCommandData $pending): string
+    private function runWorkflow(PendingCliCommandData $pending): PendingCliCommandResultData
     {
         if (! \Illuminate\Support\Facades\File::isDirectory($pending->path)) {
-            return $this->dashboardUrl('Path does not exist.');
+            return $this->failure('Path does not exist.');
         }
 
         $workflow = $pending->workflow;
 
         if (! $workflow || ! $this->findWorkflowPath($pending->path, $workflow)) {
-            return $this->dashboardUrl('Workflow does not exist.');
+            return $this->failure('Workflow does not exist.');
         }
 
         $workspaceData = app(ProjectsService::class)->loadProjectWorkspace($pending->path);
         $projectData = app(ProjectsService::class)->loadProjectFromWorkspace($workspaceData->path);
 
         if (! $projectData) {
-            return $this->dashboardUrl('Project does not exist.');
+            return $this->failure('Project does not exist.');
         }
 
         $settings = app(SettingsService::class)->loadSettings();
@@ -139,11 +143,14 @@ class CliToolsService
             timeoutSeconds: $settings->workflow_step_timeout_seconds,
         );
 
-        return WorkflowLog::getUrl([
-            'uuid' => $projectData->uuid,
-            'slug' => $workspaceData->slugKebab(),
-            'id' => $workflowRunLogId,
-        ]);
+        return new PendingCliCommandResultData(
+            url: WorkflowLog::getUrl([
+                'uuid' => $projectData->uuid,
+                'slug' => $workspaceData->slugKebab(),
+                'id' => $workflowRunLogId,
+            ]),
+            reportsToWindow: false,
+        );
     }
 
     /**
@@ -154,10 +161,10 @@ class CliToolsService
      *
      * @throws Throwable
      */
-    private function validateWorkflow(PendingCliCommandData $pending): string
+    private function validateWorkflow(PendingCliCommandData $pending): PendingCliCommandResultData
     {
         if (! \Illuminate\Support\Facades\File::isDirectory($pending->path)) {
-            return $this->dashboardUrl('Path does not exist.');
+            return $this->failure('Path does not exist.');
         }
 
         $workflow = $pending->workflow;
@@ -165,42 +172,56 @@ class CliToolsService
         $workflowPath = $workflow ? $this->findWorkflowPath($pending->path, $workflow) : null;
 
         if ($workflowPath === null) {
-            return $this->dashboardUrl('Workflow does not exist.');
+            return $this->failure('Workflow does not exist.');
         }
 
         $workspaceData = app(ProjectsService::class)->loadProjectWorkspace($pending->path);
         $projectData = app(ProjectsService::class)->loadProjectFromWorkspace($workspaceData->path);
 
         if (! $projectData) {
-            return $this->dashboardUrl('Project does not exist.');
+            return $this->failure('Project does not exist.');
         }
 
         try {
             app(WorkflowService::class)->loadWorkflow($workflowPath);
         } catch (InvalidWorkflowFile $e) {
-            return Project::getUrl([
-                'uuid' => $projectData->uuid,
-                QueryParameter::ERROR->value => "Workflow [{$workflow}] is invalid",
-                QueryParameter::BODY->value => implode("\n", [
-                    $e->path,
-                    ...array_map(fn (string $problem): string => '• '.$problem, $e->problems),
+            return new PendingCliCommandResultData(
+                url: Project::getUrl([
+                    'uuid' => $projectData->uuid,
+                    QueryParameter::ERROR->value => "Workflow [{$workflow}] is invalid",
+                    QueryParameter::BODY->value => implode("\n", [
+                        $e->path,
+                        ...array_map(fn (string $problem): string => '• '.$problem, $e->problems),
+                    ]),
                 ]),
-            ]);
+                reportsToWindow: true,
+            );
         }
 
-        return Project::getUrl([
-            'uuid' => $projectData->uuid,
-            QueryParameter::SUCCESS->value => "Workflow [{$workflow}] is valid.",
-        ]);
+        // a validation that found nothing wrong is still a report, and the notification on that
+        // page is the whole of it, so headless mode does not get to swallow it either
+        return new PendingCliCommandResultData(
+            url: Project::getUrl([
+                'uuid' => $projectData->uuid,
+                QueryParameter::SUCCESS->value => "Workflow [{$workflow}] is valid.",
+            ]),
+            reportsToWindow: true,
+        );
     }
 
     /**
+     * A failed request, as the dashboard URL carrying its message.
+     *
      * The dashboard reads the message off the query string rather than the session, because the
-     * callers run outside the window's own request and share no session with it.
+     * callers run outside the window's own request and share no session with it — which is also
+     * why a failure always reports to the window: there is nowhere else for it to be seen.
      */
-    private function dashboardUrl(string $error): string
+    private function failure(string $error): PendingCliCommandResultData
     {
-        return Dashboard::getUrl([QueryParameter::ERROR->value => $error]);
+        return new PendingCliCommandResultData(
+            url: Dashboard::getUrl([QueryParameter::ERROR->value => $error]),
+            reportsToWindow: true,
+        );
     }
 
     /**

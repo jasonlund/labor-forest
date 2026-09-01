@@ -100,6 +100,14 @@ class Settings extends Page
                                     ->label('Enable dark mode'),
                             ]),
                     ]),
+                Section::make('Headless mode')
+                    ->description(new HtmlString('Keep LaborForest out of the way of work you start somewhere else.<br/>Anything that goes wrong still brings the window forward, because the window is the only place it can be reported.'))
+                    ->schema([
+                        Toggle::make('headless')
+                            ->inline(false)
+                            ->label('Enable headless mode')
+                            ->helperText(new HtmlString('A successful <code>lf add-project</code> or <code>lf run</code> leaves your terminal in front instead of raising the app. <code>lf validate</code>, every failure, and an MCP approval prompt are unaffected.')),
+                    ]),
                 Section::make('MCP')
                     ->description('Configure the local MCP server.')
                     ->extraAttributes(['class' => 'h-full [&>.fi-section]:flex-1'])

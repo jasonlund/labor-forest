@@ -1,5 +1,6 @@
 <?php
 
+use App\Data\PendingCliCommandResultData;
 use App\Data\SettingsData;
 use App\Enums\McpServerStatus;
 use App\Enums\QueryParameter;
@@ -37,10 +38,17 @@ beforeEach(function () {
         return $provider;
     };
 
-    $this->settingsAre = function (bool $mcpEnabled) {
-        $this->mock(SettingsService::class, function (MockInterface $mock) use ($mcpEnabled) {
+    $this->settingsAre = function (bool $mcpEnabled, bool $headless = false) {
+        $this->mock(SettingsService::class, function (MockInterface $mock) use ($mcpEnabled, $headless) {
             $mock->shouldReceive('syncSettingsFile');
-            $mock->shouldReceive('loadSettings')->andReturn(new SettingsData(mcp_enabled: $mcpEnabled));
+            $mock->shouldReceive('loadSettings')->andReturn(new SettingsData(mcp_enabled: $mcpEnabled, headless: $headless));
+        });
+    };
+
+    // A pending request is the only evidence a launch was the `lf` script's doing.
+    $this->pendingCommandIs = function (?PendingCliCommandResultData $result) {
+        $this->mock(CliToolsService::class, function (MockInterface $mock) use ($result) {
+            $mock->shouldReceive('runPendingCommand')->once()->andReturn($result);
         });
     };
 });
@@ -124,7 +132,8 @@ describe('mcp server', function () {
         ($this->settingsAre)(mcpEnabled: true);
 
         $this->mock(CliToolsService::class, function (MockInterface $mock) {
-            $mock->shouldReceive('runPendingCommand')->andReturn('http://localhost/projects/some-uuid');
+            $mock->shouldReceive('runPendingCommand')
+                ->andReturn(new PendingCliCommandResultData('http://localhost/projects/some-uuid', reportsToWindow: false));
         });
 
         $this->mcp->shouldReceive('startMcpServer')
@@ -146,5 +155,79 @@ describe('mcp server', function () {
         (new NativeAppServiceProvider)->boot();
 
         expect($this->windows->opened)->toBe([WindowId::MAIN->value]);
+    });
+});
+
+/**
+ * Headless mode keys on the pending request, because that file is the only evidence the launch was
+ * the `lf` script's doing rather than the user's own.
+ */
+describe('headless mode', function () {
+    it('opens no window for a cli request that succeeded', function () {
+        ($this->settingsAre)(mcpEnabled: false, headless: true);
+        ($this->pendingCommandIs)(new PendingCliCommandResultData('http://localhost/projects/some-uuid', reportsToWindow: false));
+
+        (new NativeAppServiceProvider)->boot();
+
+        expect($this->windows->opened)->toBe([]);
+    });
+
+    it('opens a window for an outcome that exists nowhere else', function () {
+        ($this->settingsAre)(mcpEnabled: false, headless: true);
+        ($this->pendingCommandIs)(new PendingCliCommandResultData('http://localhost/projects/some-uuid?success=valid', reportsToWindow: true));
+
+        expect(($this->bootRecording)()->navigations)->toBe(['http://localhost/projects/some-uuid?success=valid']);
+    });
+
+    it('opens a window for a launch nobody asked for by name', function () {
+        // No pending request, so this is the user starting the app themselves. It is also the way
+        // back from a suppressed launch: NativePHP answers a dock click on an app with no visible
+        // windows by calling boot() again, and pullPendingCommand() has already eaten the file, so
+        // this is the branch that runs. Without it a headless CLI launch would strand the user with
+        // a running app they cannot open.
+        ($this->settingsAre)(mcpEnabled: false, headless: true);
+        ($this->pendingCommandIs)(null);
+
+        (new NativeAppServiceProvider)->boot();
+
+        expect($this->windows->opened)->toBe([WindowId::MAIN->value]);
+    });
+
+    it('still reports an mcp server it could not start', function () {
+        // the suppressed page is a success; a dead server is not, and a client only ever reports
+        // that as a failure to connect
+        ($this->settingsAre)(mcpEnabled: true, headless: true);
+        ($this->pendingCommandIs)(new PendingCliCommandResultData('http://localhost/projects/some-uuid', reportsToWindow: false));
+
+        $url = 'http://127.0.0.1:9189/mcp/laborforest';
+
+        $this->mcp->shouldReceive('startMcpServer')
+            ->once()
+            ->andThrow(new McpServerPortInUse(McpServerStatus::STALE, $url));
+
+        expect(($this->bootRecording)()->navigations)->toBe([Dashboard::getUrl([
+            QueryParameter::ERROR->value => 'The MCP server could not be started',
+            QueryParameter::BODY->value => McpServerStatus::STALE->message($url),
+        ])]);
+    });
+
+    it('opens the window as usual when it is switched off', function () {
+        ($this->settingsAre)(mcpEnabled: false, headless: false);
+        ($this->pendingCommandIs)(new PendingCliCommandResultData('http://localhost/projects/some-uuid', reportsToWindow: false));
+
+        expect(($this->bootRecording)()->navigations)->toBe(['http://localhost/projects/some-uuid']);
+    });
+
+    it('opens the window when the settings cannot be read', function () {
+        // the safe answer here is the visible one — a broken file must not be able to silence the app
+        $this->mock(SettingsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('syncSettingsFile');
+            $mock->shouldReceive('loadSettings')
+                ->andThrow(new InvalidSettingsFile('.laborforest/settings.yaml', ['broken']));
+        });
+
+        ($this->pendingCommandIs)(new PendingCliCommandResultData('http://localhost/projects/some-uuid', reportsToWindow: false));
+
+        expect(($this->bootRecording)()->navigations)->toBe(['http://localhost/projects/some-uuid']);
     });
 });

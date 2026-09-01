@@ -149,6 +149,7 @@ describe('saveSettings', function () {
 
         expect(Yaml::parse($this->disk->get($this->path)))->toBe([
             'dark_mode' => false,
+            'headless' => false,
             'cli_tools_installed' => false,
             'workflow_step_timeout_seconds' => 45,
             'mcp_enabled' => false,

@@ -20,6 +20,7 @@ class SettingsData extends Data implements McpResource
 
     public function __construct(
         public bool $dark_mode = true,
+        public bool $headless = false,
         public bool $cli_tools_installed = false,
         public int $workflow_step_timeout_seconds = 600,
         public bool $mcp_enabled = false,
@@ -46,6 +47,10 @@ class SettingsData extends Data implements McpResource
     {
         return [
             'dark_mode' => [
+                'required',
+                'boolean',
+            ],
+            'headless' => [
                 'required',
                 'boolean',
             ],

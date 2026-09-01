@@ -4,6 +4,7 @@ set -e
 
 BASE_DIR="$HOME/.laborforest"
 PENDING_FILE="$BASE_DIR/pending.yaml"
+SETTINGS_FILE="$BASE_DIR/settings.yaml"
 
 # YAML single-quoted scalar; embedded quotes are doubled per the spec.
 yaml_quote() {
@@ -27,6 +28,18 @@ write_pending() {
             printf 'workflow: %s\n' "$(yaml_quote "$workflow")"
         fi
     } > "$PENDING_FILE"
+}
+
+# Wake the app on the deeplink. Nothing but the app's own settings file says whether the user
+# wants it to come forward, and `open` decides that before any PHP runs, so the setting is read
+# here too: -g launches or wakes the app without activating it, leaving the terminal in front.
+# A file that is missing, or has no such key, reads as the visible default.
+wake_app() {
+    if [[ -f "$SETTINGS_FILE" ]] && grep -qE '^headless:[[:space:]]+true[[:space:]]*$' "$SETTINGS_FILE"; then
+        open -g "$1"
+    else
+        open "$1"
+    fi
 }
 
 usage() {
@@ -62,7 +75,7 @@ add_project() {
 
     write_pending "add-project"
 
-    open "laborforest://add-project"
+    wake_app "laborforest://add-project"
 }
 
 run_workflow() {
@@ -74,7 +87,7 @@ run_workflow() {
 
     write_pending "run-workflow" "$workflow"
 
-    open "laborforest://run-workflow"
+    wake_app "laborforest://run-workflow"
 }
 
 validate_workflow() {
@@ -86,7 +99,7 @@ validate_workflow() {
 
     write_pending "validate-workflow" "$workflow"
 
-    open "laborforest://validate-workflow"
+    wake_app "laborforest://validate-workflow"
 }
 
 case "${1-}" in

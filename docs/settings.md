@@ -18,6 +18,41 @@ When a step exceeds the timeout, the step is killed, the workflow run is marked 
 
 Dark mode is controlled by a toggle switch and is enabled by default. This toggle is the only theme control in the app.
 
+## Headless mode
+
+`Enable headless mode` keeps LaborForest out of the way of work you start somewhere else. It is off by default, and it is stored as `headless` in `~/.laborforest/settings.yaml`.
+
+Normally, running an `lf` command raises LaborForest in front of whatever you were doing and sends its window to the page the command resolved to. That is the point when you are working in the app. It is not the point when you are working in a terminal or driving the app through an agent, which is what this setting is for.
+
+With headless mode on, a command that did what you asked leaves your terminal in front and the window where it was. Nothing else changes: the Project is still added, the Workflow still runs, the run log is still written. The only difference is that you go and look at the result when you want it, rather than having it put in front of you.
+
+### What it does not suppress
+
+The window is the only thing the `lf` script and the MCP server can report with — neither shares a session with the app window, which is why results travel on the query string of a URL. So headless mode suppresses the window for work that **succeeded**, and never for anything else:
+
+| Situation                                                         | Headless mode                                    |
+|-------------------------------------------------------------------|--------------------------------------------------|
+| `lf add-project` or `lf run` succeeded                            | Silent. The window stays where it is.            |
+| Any `lf` command failed                                           | Comes forward with the error.                    |
+| `lf validate`, whether the Workflow is valid or not               | Comes forward with the result.                   |
+| You launched LaborForest yourself                                 | Opens as usual.                                  |
+| The MCP server could not start                                    | Comes forward with the reason.                   |
+| An MCP action is waiting on your approval                         | Comes forward with the approval prompt.          |
+
+`lf validate` is not exempted for consistency's sake: its entire output is that notification, so suppressing the window would mean the command produced nothing at all, anywhere.
+
+An `lf` command that starts LaborForest in headless mode leaves it running with no window at all. Click its Dock icon to get one — macOS asks the app to open a window when you click the icon of an application that has none showing, and a click is not a CLI request, so a window is what you get.
+
+The approval prompt is the deliberate exception. `Require approval` is a question the app has to ask you, and the MCP client is told the action is waiting and then hears nothing more, so an approval you never see is an agent that waits forever. If you do not want to be interrupted, set `Shell command execution` to `Allow` or `Deny` rather than relying on headless mode.
+
+The setting is not something an agent can change: `update-settings` does not accept it, so the MCP server cannot make the app stop showing itself.
+
+### The `lf` script
+
+macOS decides whether to bring an application forward when it opens a deeplink, and it decides that before any of LaborForest's own code runs. The `lf` script therefore reads `headless` out of `~/.laborforest/settings.yaml` itself and wakes the app without activating it. A settings file that does not exist yet, or that has no `headless` key, reads as off.
+
+The setting therefore takes effect for `lf` as soon as you save it, with nothing to reinstall.
+
 ## MCP
 
 LaborForest can expose itself to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io). The server is local: it listens on `127.0.0.1` only, and it runs for as long as the app does. This section covers the settings; the tools and resources the server exposes, and what an agent can do with them, are covered in [MCP](mcp.md).
