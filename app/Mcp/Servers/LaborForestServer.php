@@ -141,8 +141,9 @@ reproduces the failure.
 - `update-settings` cannot change `mcp_enabled`, `mcp_port`, `mcp_read_only`, `mcp_shell_policy`,
   `headless` or the token. The server will not move, unlock or switch itself off underneath its own
   client, will not loosen its own shell gate, and does not decide when the app shows its window; send
-  the user to the app's Settings screen for those. These keys are readable on `laborforest://settings`
-  and passing one to `update-settings` is ignored rather than refused, so do not report it as changed.
+  the user to the app's Settings screen for those. The first five are readable on
+  `laborforest://settings`; the token is never returned over MCP at all. Passing any of the six to
+  `update-settings` is ignored rather than refused, so do not report one as changed.
 - For the three launch commands, in both `update-settings` and `update-project-launch-commands`: omitting
   a field or passing `null` keeps the stored value, a string sets it, and an empty string clears it. A
   Project's override wins over the global command, and clearing an override falls back to the global one.
