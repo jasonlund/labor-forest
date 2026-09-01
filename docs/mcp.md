@@ -50,7 +50,7 @@ What it shows is the command as it will run, not as it was written. Every `{{ }}
 
 Only one parked action is held at a time. A second tool call while a modal is waiting replaces the first, so an approval you have not answered is discarded rather than queued behind the new one.
 
-[Headless mode](settings.md#headless-mode) does not suppress any of this. The agent is answered when the action is parked and hears nothing more, so an approval prompt you never see is an agent that waits forever. If you do not want to be interrupted, choose `Allow` or `Deny` instead.
+The modal is drawn inside an open app window, and the app reaches it over a broadcast that only a rendered window receives. With no window open there is nothing listening: the prompt never appears, and because the agent was already answered when the call was parked, it waits forever for a decision it will never be told about. Opening a window afterwards does not redeliver it. Closing the window with ⌘W is enough to reach this, and [headless mode](settings.md#headless-mode) makes it routine — it does not suppress the prompt, but it is the one setting that stops guaranteeing the window the prompt needs. **Choose `Allow` or `Deny` if you run headless.**
 
 A parked action carries no reservation. `run-workflow` parks before the Workspace status gate is evaluated, so a run can be parked against a Workspace that would refuse it, and a Workspace's status can change while a modal waits. The gate is enforced when you approve, which is also when a launch command with an unresolvable variable fails. Either failure arrives as a red notification in the app, naming the reason, and nothing is dispatched.
 

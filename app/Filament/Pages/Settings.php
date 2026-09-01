@@ -106,7 +106,7 @@ class Settings extends Page
                         Toggle::make('headless')
                             ->inline(false)
                             ->label('Enable headless mode')
-                            ->helperText(new HtmlString('A successful <code>lf add-project</code> or <code>lf run</code> leaves your terminal in front instead of raising the app. <code>lf validate</code>, every failure, and an MCP approval prompt are unaffected.')),
+                            ->helperText(new HtmlString('A successful <code>lf add-project</code> or <code>lf run</code> leaves your terminal in front instead of raising the app. <code>lf validate</code> and every failure still come forward. Set <code>Shell command execution</code> to <code>Allow</code> or <code>Deny</code> while this is on: an approval prompt needs an open window, and this setting stops guaranteeing one.')),
                     ]),
                 Section::make('MCP')
                     ->description('Configure the local MCP server.')

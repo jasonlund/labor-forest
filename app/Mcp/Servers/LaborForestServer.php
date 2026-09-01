@@ -138,9 +138,11 @@ reproduces the failure.
   way, as is a `deny` shell policy for the four tools above. A tool named here that is missing from
   the tool list is not a bug to work around, and no other tool substitutes for it: say which tool is
   missing, and send the user to the Settings screen.
-- `update-settings` cannot change `mcp_enabled`, `mcp_port`, `mcp_read_only`, `mcp_shell_policy` or the
-  token. The server will not move, unlock or switch itself off underneath its own client, and will not
-  loosen its own shell gate; send the user to the app's Settings screen for those.
+- `update-settings` cannot change `mcp_enabled`, `mcp_port`, `mcp_read_only`, `mcp_shell_policy`,
+  `headless` or the token. The server will not move, unlock or switch itself off underneath its own
+  client, will not loosen its own shell gate, and does not decide when the app shows its window; send
+  the user to the app's Settings screen for those. These keys are readable on `laborforest://settings`
+  and passing one to `update-settings` is ignored rather than refused, so do not report it as changed.
 - For the three launch commands, in both `update-settings` and `update-project-launch-commands`: omitting
   a field or passing `null` keeps the stored value, a string sets it, and an empty string clears it. A
   Project's override wins over the global command, and clearing an override falls back to the global one.

@@ -37,13 +37,22 @@ The window is the only thing the `lf` script and the MCP server can report with 
 | `lf validate`, whether the Workflow is valid or not               | Comes forward with the result.                   |
 | You launched LaborForest yourself                                 | Opens as usual.                                  |
 | The MCP server could not start                                    | Comes forward with the reason.                   |
-| An MCP action is waiting on your approval                         | Comes forward with the approval prompt.          |
+| An MCP action is waiting on your approval, with a window open      | Comes forward with the approval prompt.          |
+| An MCP action is waiting on your approval, with no window open     | **Cannot reach you.** See below.                 |
 
 `lf validate` is not exempted for consistency's sake: its entire output is that notification, so suppressing the window would mean the command produced nothing at all, anywhere.
 
 An `lf` command that starts LaborForest in headless mode leaves it running with no window at all. Click its Dock icon to get one — macOS asks the app to open a window when you click the icon of an application that has none showing, and a click is not a CLI request, so a window is what you get.
 
-The approval prompt is the deliberate exception. `Require approval` is a question the app has to ask you, and the MCP client is told the action is waiting and then hears nothing more, so an approval you never see is an agent that waits forever. If you do not want to be interrupted, set `Shell command execution` to `Allow` or `Deny` rather than relying on headless mode.
+### Headless mode and `Require approval` do not go together
+
+The approval prompt is not suppressed by headless mode — nothing in it checks the setting. But it can only appear inside an open window, and headless mode is the one thing that routinely leaves LaborForest running without one.
+
+The prompt is drawn by a component that lives inside a rendered app window, and the app asks for it over a broadcast that only a rendered window receives. With no window open there is nothing listening, and the prompt is lost. The client was already told the action is waiting, and it hears nothing more, so the agent waits forever for an approval that never appeared. Clicking the Dock icon afterwards opens a window, but the prompt is not redelivered.
+
+This is not new to headless mode — closing the window with ⌘W leaves the app running the same way, with the same result. Headless mode matters because it makes the windowless state routine rather than something you have to do on purpose.
+
+**If you run headless, set `Shell command execution` to `Allow` or `Deny`.** `Require approval` needs a window to be open, and headless mode is precisely the setting that stops guaranteeing one.
 
 The setting is not something an agent can change: `update-settings` does not accept it, so the MCP server cannot make the app stop showing itself.
 

@@ -110,7 +110,9 @@ it('tells connecting clients what the server is for and what it will not do', fu
         // a parked call is waiting on the user, so calling again only parks another one
         ->toContain('do not call the tool again to retry')
         // the settings the server refuses to change out from under its own client
-        ->toContain('cannot change `mcp_enabled`, `mcp_port`, `mcp_read_only`, `mcp_shell_policy` or the')
+        ->toContain('cannot change `mcp_enabled`, `mcp_port`, `mcp_read_only`, `mcp_shell_policy`,')
+        // headless is readable on the settings resource, so the block has to say it is not writable
+        ->toContain('`headless` or the token')
         // a short tool list is a mode the user chose, not something to route around
         ->toContain('read-only mode')
         // no tool writes a workflow file, so the grammar has to be fetched before one is written
@@ -1387,6 +1389,34 @@ describe('tools', function () {
             ->and($saved->command_launch_terminal)->toBe($defaults->command_launch_terminal);
 
         Event::assertDispatched(GlobalRefresh::class);
+    });
+
+    /**
+     * The server's #[Instructions] block tells a client that `headless` is ignored rather than
+     * refused. Nothing sets additionalProperties on the tool schema, so an unknown key reaches a
+     * handler that never reads it and still answers `success` — which is exactly why the block has
+     * to say so: the reply on its own would read as the setting having been changed.
+     */
+    it('ignores a headless key rather than refusing it, and leaves the setting alone', function () {
+        Event::fake([GlobalRefresh::class]);
+
+        $saved = null;
+
+        $this->mock(SettingsService::class, function (MockInterface $mock) use (&$saved) {
+            $mock->shouldReceive('loadSettings')->twice()->andReturn(mcpWritableSettings());
+            $mock->shouldReceive('saveSettings')->once()
+                ->andReturnUsing(function (SettingsData $settings) use (&$saved) {
+                    $saved = $settings;
+                });
+        });
+
+        LaborForestServer::tool(UpdateSettingsTool::class, [
+            'headless' => true,
+            'dark_mode' => false,
+        ])->assertOk()->assertSee('success');
+
+        expect($saved->headless)->toBeFalse()
+            ->and($saved->dark_mode)->toBeFalse();
     });
 
     it('refuses a launch command whose placeholder is never closed', function () {
