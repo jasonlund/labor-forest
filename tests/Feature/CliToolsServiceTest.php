@@ -1,5 +1,6 @@
 <?php
 
+use App\Data\PendingCliCommandResultData;
 use App\Data\ProjectData;
 use App\Data\SettingsData;
 use App\Enums\WorkspaceStatus;
@@ -460,6 +461,83 @@ describe('validate-workflow', function () {
     });
 });
 
+/**
+ * Which outcomes headless mode is allowed to keep off the screen. The window is the only thing
+ * either caller can report with, so anything that exists nowhere else has to keep it.
+ */
+describe('reporting to the window', function () {
+    it('leaves an added project to be looked at later', function () {
+        cliToolsWritePending(['command' => 'add-project', 'path' => $this->workspacePath]);
+
+        $this->mock(ProjectsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('addProject')
+                ->andReturn(componentProjectData($this->uuid, $this->workspacePath));
+        });
+
+        expect(cliToolsRunResult()->reportsToWindow)->toBeFalse();
+    });
+
+    it('leaves a dispatched workflow to be looked at later', function () {
+        cliToolsWritePendingWorkflow($this->workspacePath, 'up');
+        cliToolsMockProjectsService($this->workspacePath, componentProjectData($this->uuid, '/tmp/repo'));
+
+        $this->mock(SettingsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadSettings')->andReturn(new SettingsData);
+        });
+
+        $this->mock(WorkflowService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('dispatchWorkflow')->andReturn('20240101T000000Z_repo-feature_up');
+        });
+
+        expect(cliToolsRunResult()->reportsToWindow)->toBeFalse();
+    });
+
+    it('keeps the window for a validation that passed', function () {
+        cliToolsWritePendingValidate($this->workspacePath, 'up');
+        cliToolsMockProjectsService($this->workspacePath, componentProjectData($this->uuid, '/tmp/repo'));
+
+        $this->mock(WorkflowService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadWorkflow')->once();
+        });
+
+        expect(cliToolsRunResult()->reportsToWindow)->toBeTrue();
+    });
+
+    it('keeps the window for a validation that failed', function () {
+        cliToolsWritePendingValidate($this->workspacePath, 'up');
+        cliToolsMockProjectsService($this->workspacePath, componentProjectData($this->uuid, '/tmp/repo'));
+
+        $this->mock(WorkflowService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadWorkflow')
+                ->once()
+                ->andThrow(new InvalidWorkflowFile($this->workflowPath, ['steps: required']));
+        });
+
+        expect(cliToolsRunResult()->reportsToWindow)->toBeTrue();
+    });
+
+    it('keeps the window for a request that could not be carried out', function () {
+        cliToolsWritePending(['command' => 'add-project', 'path' => '/tmp/nope']);
+
+        $this->mock(ProjectsService::class, function (MockInterface $mock) {
+            $mock->shouldNotReceive('addProject');
+        });
+
+        expect(cliToolsRunResult()->reportsToWindow)->toBeTrue();
+    });
+
+    it('keeps the window for a request that threw', function () {
+        cliToolsWritePending(['command' => 'add-project', 'path' => $this->workspacePath]);
+
+        $this->mock(ProjectsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('addProject')
+                ->andThrow(new ProjectDirectoryNotGitRepository($this->workspacePath));
+        });
+
+        expect(cliToolsRunResult()->reportsToWindow)->toBeTrue();
+    });
+});
+
 describe('the pending file', function () {
     it('returns null when there is no pending file', function () {
         $this->mock(ProjectsService::class, function (MockInterface $mock) {
@@ -577,6 +655,15 @@ function cliToolsWritePendingValidate(string $path, string $workflow): void
  * The page the pending request resolves to, if any.
  */
 function cliToolsRun(): ?string
+{
+    return cliToolsRunResult()?->url;
+}
+
+/**
+ * The whole outcome of the pending request, for the tests that care whether the window is the
+ * only place it can be reported.
+ */
+function cliToolsRunResult(): ?PendingCliCommandResultData
 {
     return app(CliToolsService::class)->runPendingCommand();
 }

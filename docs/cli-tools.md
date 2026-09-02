@@ -29,6 +29,10 @@ Run `lf --help` to display the help message. Running `lf` with no arguments prin
 
 When a command fails inside the application, the app opens on a page carrying the error as a red notification, because the command runs outside the application window's session. A `lf validate` failure that is the Workflow's own invalidity reports on that Workflow's Project page; every other failure reports on the Dashboard.
 
+### Staying in your terminal
+
+Every command above ends with LaborForest in front of your terminal. Turn on [headless mode](settings.md#headless-mode) if you would rather it stayed where it is: a command that did what you asked then leaves your terminal focused, and only a failure — or `lf validate`, whose whole output is a notification — brings the app forward. The work itself is unaffected either way.
+
 ### Cold starts
 
 LaborForest does not need to be running in order to run the above commands. If the application is not already running, it is started before your command is processed.

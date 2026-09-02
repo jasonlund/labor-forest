@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Enums\WindowId;
 use App\Services\CliToolsService;
+use App\Services\SettingsService;
 use Native\Desktop\Events\App\OpenedFromURL;
 use Native\Desktop\Facades\Window;
 use Native\Desktop\Windows\Window as NativeWindow;
@@ -19,16 +20,34 @@ class RunPendingCliCommand
     /**
      * The event carries the deeplink URL, but it is only a wake trigger — the request itself
      * travels through ~/.laborforest/pending.yaml.
+     *
+     * The command runs either way; headless mode only decides whether the window is summoned to
+     * show the page it resolved to, and never withholds one the window is the only place to see.
      */
     public function handle(OpenedFromURL $event): void
     {
-        $target = app(CliToolsService::class)->runPendingCommand();
+        $result = app(CliToolsService::class)->runPendingCommand();
 
-        if ($target === null) {
+        if ($result === null) {
             return;
         }
 
-        $this->navigateTo($target);
+        if (! $result->reportsToWindow && $this->isHeadless()) {
+            return;
+        }
+
+        $this->navigateTo($result->url);
+    }
+
+    /**
+     * Whether the user asked the app to stay out of the way of work started somewhere else.
+     *
+     * Settings that cannot be read answer `false`. Unlike the MCP gates, the safe answer here is
+     * the visible one: a broken settings file should not be able to silence the app.
+     */
+    private function isHeadless(): bool
+    {
+        return rescue(fn (): bool => app(SettingsService::class)->loadSettings()->headless, false);
     }
 
     /**

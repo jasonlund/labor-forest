@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Data\PendingCliCommandResultData;
 use App\Enums\QueryParameter;
 use App\Enums\WindowId;
 use App\Exceptions\McpServerPortInUse;
@@ -63,19 +64,43 @@ class NativeAppServiceProvider implements ProvidesPhpIni
         }
 
         /**
+         * Settings that cannot be read answer `false`. Unlike the MCP gates, the safe answer here
+         * is the visible one: a broken settings file should not be able to silence the app.
+         */
+        $headless = rescue(fn (): bool => $settingsService->loadSettings()->headless, false);
+
+        /**
          * A cold `lf` launch is served here rather than from a deeplink event: macOS fires open-url
          * before the PHP server is listening, and NativePHP's notifyLaravel() drops the failure.
          * Running it before the window opens means the window loads the target page directly,
          * instead of showing the dashboard and then replacing it.
          */
-        $target = rescue(fn (): ?string => app(CliToolsService::class)->runPendingCommand());
+        $pending = rescue(fn (): ?PendingCliCommandResultData => app(CliToolsService::class)->runPendingCommand());
+
+        /**
+         * A pending request is the only evidence this launch was the `lf` script's doing rather
+         * than the user's own, so it is also what headless mode keys on: a launch nobody asked for
+         * by name still opens a window, and so does an outcome the window is the only place to
+         * report.
+         */
+        $suppressWindow = $headless && $pending !== null && ! $pending->reportsToWindow;
 
         /**
          * A CLI request is what the user asked for by name, so it keeps the window. Only when there
          * is none does an occupied MCP port get to choose the landing page: the alternative is an
          * app whose MCP server is silently dead, which the user next meets as a failing client.
          */
+        $target = $suppressWindow ? null : $pending?->url;
+
         $target ??= $this->mcpFailureUrl($mcpFailure);
+
+        /**
+         * The suppressed launch still surfaces a dead MCP server, because that is a failure and
+         * headless mode suppresses only the pages behind work that succeeded.
+         */
+        if ($suppressWindow && $target === null) {
+            return;
+        }
 
         $window = Window::open(WindowId::MAIN->value)
             ->maximized();

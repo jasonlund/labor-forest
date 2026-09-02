@@ -33,6 +33,7 @@ describe('mount', function () {
             ->assertOk()
             ->assertSet('loadedInvalidMessage', null)
             ->assertSet('data.dark_mode', false)
+            ->assertSet('data.headless', false)
             ->assertSet('data.workflow_step_timeout_seconds', 600)
             ->assertSet('data.command_launch_terminal', $this->terminalExample)
             ->assertSet('data.command_launch_ide', $this->ideExample)
@@ -85,6 +86,22 @@ describe('save', function () {
                 'command_launch_ide' => 'open "{{ WORKSPACE_DIR }}" -a zed',
                 'command_launch_browser' => 'open "{{ ENV_APP_URL }}/dashboard"',
             ])
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertNotified('Settings saved');
+    });
+
+    it('stores the headless toggle', function () {
+        $this->mock(SettingsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('loadSettings')->andReturn(settingsPageSettingsData());
+            $mock->shouldReceive('saveSettings')
+                ->once()
+                ->withArgs(fn (SettingsData $settings) => $settings->headless === true);
+        });
+
+        Livewire::test(Settings::class)
+            ->assertSet('data.headless', false)
+            ->fillForm(['headless' => true])
             ->call('save')
             ->assertHasNoFormErrors()
             ->assertNotified('Settings saved');
@@ -628,6 +645,7 @@ describe('example suffix actions', function () {
  */
 function settingsPageSettingsData(
     bool $darkMode = false,
+    bool $headless = false,
     int $workflowTimeoutSeconds = 600,
     ?string $ide = 'open "{{ WORKSPACE_DIR }}" -a phpstorm',
     ?string $browser = 'open "{{ ENV_APP_URL }}"',
@@ -640,6 +658,7 @@ function settingsPageSettingsData(
 ): SettingsData {
     return new SettingsData(
         dark_mode: $darkMode,
+        headless: $headless,
         mcp_enabled: $mcpEnabled,
         mcp_port: $mcpPort,
         mcp_read_only: $mcpReadOnly,
