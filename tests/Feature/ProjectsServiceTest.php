@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Ramsey\Uuid\Uuid;
 use Symfony\Component\Finder\SplFileInfo;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
@@ -359,18 +360,27 @@ describe('addProject', function () {
             ->and($this->files['/tmp/repo/.laborforest/ignored/status.yaml'])->toBe("status: suspended\n");
     });
 
-    it('writes a mapping instead of a list when the stored projects are not already sorted', function () {
-        $this->directories = [$this->repo];
-        $this->disk->put($this->path, projectsFile([
-            projectEntry($this->uuid, '/tmp/one', 100),
-            projectEntry(secondUuid(), '/tmp/two', 200),
-        ]));
+    it('keeps the projects file a list across consecutive adds', function () {
+        $this->directories = [$this->repo, '/tmp/repo-two'];
+        $this->disk->put($this->path, projectsFile([projectEntry(secondUuid(), '/tmp/seeded', 100)]));
+
+        // the frozen uuid of the outer beforeEach would repeat across both adds
+        Str::createUuidsUsingSequence([Uuid::fromString($this->uuid), Uuid::fromString(thirdUuid())]);
 
         $this->projects->addProject($this->repo);
 
-        expect(array_keys(Yaml::parse($this->disk->get($this->path))))->toBe([1, 0, 2])
-            ->and(fn () => $this->projects->loadProjects())
-            ->toThrow(InvalidProjectsFile::class, 'Expected a list of projects, found a mapping.');
+        expect(array_is_list(Yaml::parse($this->disk->get($this->path))))->toBeTrue();
+
+        // the sorted load only reorders keys once two entries are stored, so the second add is
+        // what used to dump a mapping and leave the file unreadable
+        $this->projects->addProject('/tmp/repo-two');
+
+        $written = Yaml::parse($this->disk->get($this->path));
+
+        expect(array_is_list($written))->toBeTrue()
+            ->and(array_keys($written))->toBe([0, 1, 2])
+            ->and($this->projects->loadProjects()->pluck('path')->all())
+            ->toBe([$this->repo, '/tmp/repo-two', '/tmp/seeded']);
     });
 
     it('throws before reading the projects file when the directory does not exist', function () {
@@ -791,7 +801,7 @@ describe('loadProjects', function () {
         expect($this->projects->loadProjects())->toBeEmpty();
     });
 
-    it('sorts by last opened without reindexing the keys', function () {
+    it('sorts by last opened and reindexes the keys', function () {
         $this->disk->put($this->path, projectsFile([
             projectEntry($this->uuid, '/tmp/one', 100),
             projectEntry(secondUuid(), '/tmp/two', 300),
@@ -801,7 +811,7 @@ describe('loadProjects', function () {
         $projects = $this->projects->loadProjects();
 
         expect($projects->pluck('path')->all())->toBe(['/tmp/two', '/tmp/three', '/tmp/one'])
-            ->and($projects->keys()->all())->toBe([1, 2, 0])
+            ->and($projects->keys()->all())->toBe([0, 1, 2])
             ->and($projects->first())->toBeInstanceOf(ProjectData::class);
     });
 
