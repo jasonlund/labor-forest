@@ -210,6 +210,26 @@ describe('removeWorktree', function () {
         expect(fn () => $this->git->removeWorktree($this->repo, $this->worktree, 'feature', false, true, false))
             ->toThrow(GitOperationFailed::class, "Failed to delete branch: error: the branch 'feature' is not fully merged");
     });
+
+    it('reports the forced branch deletion in the failure message', function () {
+        $this->process->responses = [
+            ['ok' => true],
+            ['ok' => false, 'err' => "error: the branch 'feature' is not fully merged"],
+        ];
+
+        expect(fn () => $this->git->removeWorktree($this->repo, $this->worktree, 'feature', false, true, true))
+            ->toThrow(GitOperationFailed::class, "Failed to delete branch (forced): error: the branch 'feature' is not fully merged");
+    });
+
+    it('does not call the branch deletion forced when only the worktree removal was', function () {
+        $this->process->responses = [
+            ['ok' => true],
+            ['ok' => false, 'err' => "error: the branch 'feature' is not fully merged"],
+        ];
+
+        expect(fn () => $this->git->removeWorktree($this->repo, $this->worktree, 'feature', true, true, false))
+            ->toThrow(GitOperationFailed::class, "Failed to delete branch: error: the branch 'feature' is not fully merged");
+    });
 });
 
 describe('removeLinkedWorktrees', function () {
