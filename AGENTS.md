@@ -96,7 +96,7 @@ The approval itself is `app/Livewire/McpActionPendingApprovalModal.php`, registe
 
 The MCP client is answered when the action is parked and hears nothing more, so the approval path has nowhere to report a failure but the window: the action body is wrapped in `HasResultNotificationOperations::resultNotificationOperation()`. This is load-bearing rather than tidy — `RunWorkflowTool` parks *before* the status gate is considered (`ensureWorkspaceCanRunWorkflow()` lives inside `dispatchWorkflow()`), so approving a run the workspace will not take throws `WorkflowNotRunnable` out of the Filament action, as does a launch command with an unresolvable `{{ ENV_* }}`.
 
-Every mutating tool — the eight `RegistersWhenWritable` ones plus `RunWorkflowTool` — and an approval acted on in the modal broadcast `GlobalRefresh` (`app/Events/GlobalRefresh.php`); `RefreshButton` listens (`#[On('native:…GlobalRefresh')]`) and reloads whichever page is showing, which is how a change made over MCP repaints a window nobody clicked.
+Every mutating tool — the nine `RegistersWhenWritable` ones plus `RunWorkflowTool` — and an approval acted on in the modal broadcast `GlobalRefresh` (`app/Events/GlobalRefresh.php`); `RefreshButton` listens (`#[On('native:…GlobalRefresh')]`) and reloads whichever page is showing, which is how a change made over MCP repaints a window nobody clicked.
 
 The three `LaunchService::get{Terminal,Ide,Browser}Command()` methods and `getRawCommand()` exist for that modal: it needs the command the user would get without spawning it. `getRawCommand()` null-guards its input because, unlike `launch()`, it is called without the falsy-command short-circuit in front of it.
 
