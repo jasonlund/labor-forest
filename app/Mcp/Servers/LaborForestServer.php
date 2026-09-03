@@ -21,6 +21,7 @@ use App\Mcp\Tools\LaunchTerminalTool;
 use App\Mcp\Tools\OverrideWorkspaceStatusTool;
 use App\Mcp\Tools\PurgeWorkflowLogsTool;
 use App\Mcp\Tools\RemoveProjectTool;
+use App\Mcp\Tools\RemoveWorkspaceTool;
 use App\Mcp\Tools\RunWorkflowTool;
 use App\Mcp\Tools\UpdateProjectLaunchCommandsTool;
 use App\Mcp\Tools\UpdateSettingsTool;
@@ -68,6 +69,25 @@ copies. It is not CI, and it is not a way to manage agents.
   the grammar's rules are not guessable from an example.
 - Order matters. A Project must be registered before `add-workspace` will accept it, and a Workspace must
   exist before workflows can be seeded into it or run in it.
+
+## Removing Workspaces
+
+`remove-workspace` deletes a Workspace's worktree directory from disk, and its branch along with it when
+asked. It is addressed by the Workspace path, and all three of `force_delete_worktree`, `delete_branch`
+and `force_delete_branch` are stated on every call rather than defaulted — leaving one out is refused,
+because an unstated flag read as false decides a destruction nobody answered either way.
+`force_delete_branch` needs `delete_branch` to be true, and is refused beside a false one rather than
+quietly ignored, which is what git does with that pairing.
+
+Only a Workspace at rest may be removed — `suspended`, `error` or `unknown`. The primary Workspace is the
+Project's own directory and is never removable. A `ready` Workspace is refused until
+`override-workspace-status` suspends it, and one whose run is still in flight — `pending` or `working` — is
+refused until the run finishes, because the run is executing in the very directory the removal would
+delete. A worktree with local changes is refused by git itself, which is what `force_delete_worktree`
+overrides.
+
+Nothing records a Workspace outside the git worktree, so a removal leaves nothing to clean up
+afterwards — and nothing to undo it with either.
 
 ## Running workflows
 
@@ -121,7 +141,8 @@ reproduces the failure.
   workflows contain. Only the four tools that spawn a shell — `run-workflow`, `launch-terminal`,
   `launch-ide` and `launch-browser` — are gated on the LaborForest side;
   **nothing else here asks the user to confirm a tool call.**
-  Confirm `remove-project`, `run-workflow` and `purge-workflow-logs` with the user before calling them.
+  Confirm `remove-project`, `remove-workspace`, `run-workflow` and `purge-workflow-logs` with the user
+  before calling them.
 - Those four obey the user's shell command execution policy. Under `allow` they run as called. Under
   `require-approval` the call changes nothing and answers `pending manual approval in application UI`:
   LaborForest shows the user the workflow or the command and waits, so treat the work as neither done
@@ -163,6 +184,7 @@ class LaborForestServer extends Server
         AddProjectTool::class,
         RemoveProjectTool::class,
         AddWorkspaceTool::class,
+        RemoveWorkspaceTool::class,
         AddWorkspaceExampleWorkflowsTool::class,
         ValidateWorkflowTool::class,
         RunWorkflowTool::class,
