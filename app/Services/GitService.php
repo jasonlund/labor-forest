@@ -86,7 +86,7 @@ class GitService
             $deleteBranchResult = $this->runGit($deleteBranchCommand, $mainWorktreePath);
 
             if ($deleteBranchResult->failed()) {
-                throw new GitOperationFailed('delete branch'.($force ? ' (forced)' : ''), $deleteBranchResult->errorOutput());
+                throw new GitOperationFailed('delete branch'.($forceDeleteBranch ? ' (forced)' : ''), $deleteBranchResult->errorOutput());
             }
         }
     }

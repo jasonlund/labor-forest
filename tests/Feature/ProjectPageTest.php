@@ -909,6 +909,42 @@ describe('workspace remove record action', function () {
             ->assertNotified('Workspace removed');
     });
 
+    it('passes the branch deletion options through when both checkboxes are ticked', function () {
+        $services = projectPageServices(
+            project: $this->project,
+            workspaces: [$this->suspendedWorkspace],
+            workflows: $this->workflows,
+        );
+
+        $services['git']
+            ->shouldReceive('removeWorktree')
+            ->once()
+            ->withArgs(fn (
+                string $mainWorktreePath,
+                string $worktreePath,
+                string $branch,
+                bool $force,
+                bool $deleteBranch,
+                bool $forceDeleteBranch,
+            ) => $mainWorktreePath === $this->projectPath
+                && $worktreePath === $this->workspacePath
+                && $branch === 'feature'
+                && $force === true
+                && $deleteBranch === true
+                && $forceDeleteBranch === true);
+
+        Livewire::test(Project::class, ['uuid' => $this->uuid])
+            ->callAction(
+                TestAction::make('remove')->table('0'),
+                [
+                    'force_delete_worktree' => true,
+                    'delete_branch' => true,
+                    'force_delete_branch' => true,
+                ],
+            )
+            ->assertNotified('Workspace removed');
+    });
+
     it('is hidden for a ready workspace', function () {
         projectPageServices(
             project: $this->project,
